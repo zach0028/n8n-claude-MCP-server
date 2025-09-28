@@ -95,26 +95,103 @@ Add to your `claude_desktop_config.json`:
 | `create_workflow_template` | Use pre-built templates | Quick workflow deployment |
 | `list_node_types` | Browse available nodes | Discover automation possibilities |
 
-## 💡 Usage Examples
+## 💡 Prompt Examples for Claude AI
 
-### Create a Simple Webhook Workflow
+### 🎯 **IMPORTANT: How to Create Workflows with Claude**
+
+To create workflows successfully, you **MUST** explicitly ask Claude to:
+1. **Create the workflow in n8n via MCP**
+2. **Make the connections between components**
+
+### ✅ **Correct Prompts Examples**
+
+#### Create a Complete Webhook to Email Workflow
 ```
-"Create a webhook workflow that receives POST data and sends an email notification"
+"Use the n8n MCP tools to create a new workflow in n8n that:
+1. Receives webhook data via POST
+2. Processes the incoming data
+3. Sends an email notification
+4. Returns a success response
+
+Please create this workflow in n8n and ensure all nodes are properly connected."
 ```
 
-### Use a Template
+#### Create a Data Processing Pipeline
 ```
-"Create a workflow from the webhook_to_email template"
+"Create a workflow in n8n using the MCP server that:
+1. Starts with a webhook trigger
+2. Adds a function node to transform the data
+3. Connects to a database to store results
+4. Sends a Slack notification when complete
+
+Make sure to create all connections between the nodes."
 ```
 
-### Monitor Executions
+#### Create from Template and Customize
 ```
-"Show me the last 10 executions and their status"
+"Use the n8n MCP to create a workflow from the webhook_to_email template, then customize it to:
+1. Add data validation before processing
+2. Include error handling
+3. Connect all nodes properly
+
+Create this in n8n and verify all connections work."
 ```
 
-### Validate Before Creating
+#### Monitor and Debug Existing Workflows
 ```
-"Validate this workflow structure before I create it"
+"Use the n8n MCP tools to:
+1. List all my current workflows
+2. Show the execution history for the last workflow
+3. Check if there are any failed executions
+
+If there are issues, help me understand what went wrong."
+```
+
+### ❌ **Avoid These Incomplete Prompts**
+
+```
+❌ "Create a webhook workflow" (too vague)
+❌ "Show me how to make a workflow" (doesn't use MCP)
+❌ "I need email automation" (no action specified)
+```
+
+### 🔧 **Advanced Workflow Creation**
+
+#### Complex Multi-Step Automation
+```
+"Create a comprehensive workflow in n8n via MCP that:
+1. Webhook trigger for incoming customer data
+2. Function node to validate and clean the data
+3. Conditional logic to route based on customer type
+4. Different email templates for different customer types
+5. Database storage for all interactions
+6. Slack notification to the sales team
+
+Please create this workflow in n8n, ensure all nodes are connected properly, and activate it."
+```
+
+#### Error Handling and Monitoring
+```
+"Use the n8n MCP to create a robust workflow with:
+1. HTTP request to external API
+2. Error handling for failed requests
+3. Retry logic with exponential backoff
+4. Success/failure notifications
+5. Data logging for monitoring
+
+Create this in n8n with proper node connections and test it."
+```
+
+### 📊 **Workflow Management**
+
+#### List and Analyze
+```
+"Use the n8n MCP tools to show me all my workflows, their status, and recent execution results. Help me identify which ones need attention."
+```
+
+#### Update Existing Workflow
+```
+"Use the n8n MCP to update workflow ID [123] by adding a new email notification step after the data processing node. Make sure all connections are maintained."
 ```
 
 ## 🏗️ Architecture
@@ -178,7 +255,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [n8n API Reference](https://docs.n8n.io/api/)
 
 ---
-
-**Made with ❤️ for the automation community**
-
-*Transform your workflow automation with the power of AI!* 🤖✨
