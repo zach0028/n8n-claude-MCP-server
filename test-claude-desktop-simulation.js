@@ -126,7 +126,7 @@ const { nodes, autoConnect } = createWorkflowRequest;
 let smartConnections = {};
 
 if (autoConnect) {
-  console.log('✨ Auto-connect enabled - generating smart connections...');
+  console.log(' Auto-connect enabled - generating smart connections...');
   smartConnections = generateSmartConnections(nodes);
 }
 
@@ -172,17 +172,17 @@ console.log(`  Expected: ${expectedFlow}`);
 console.log(`  Generated: ${actualFlowString}`);
 
 const isFlowCorrect = expectedFlow === actualFlowString;
-console.log(`\n${isFlowCorrect ? '✅' : '❌'} Flow validation: ${isFlowCorrect ? 'PASSED' : 'FAILED'}`);
+console.log(`\n${isFlowCorrect ? '[SUCCESS]' : '[FAILED]'} Flow validation: ${isFlowCorrect ? 'PASSED' : 'FAILED'}`);
 
 if (isFlowCorrect) {
-  console.log('\n🎉 SUCCESS: Auto-connection system is fully operational!');
-  console.log('🚀 Claude Desktop can now create workflows with automatic connections!');
+  console.log('\n SUCCESS: Auto-connection system is fully operational!');
+  console.log(' Claude Desktop can now create workflows with automatic connections!');
   console.log('📡 Ready for production use!');
 } else {
-  console.log('\n❌ FAILED: Flow does not match expected pattern');
+  console.log('\n[FAILED] FAILED: Flow does not match expected pattern');
 }
 
-console.log('\n🔧 To test in Claude Desktop, use:');
+console.log('\n To test in Claude Desktop, use:');
 console.log('```');
 console.log('Créer un workflow avec auto-connexion qui reçoit un webhook, traite les données avec un node Set, envoie un email, et retourne une réponse. Active autoConnect pour générer les connexions automatiquement.');
 console.log('```');

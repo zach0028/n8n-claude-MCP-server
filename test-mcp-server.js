@@ -113,7 +113,7 @@ console.log('🧪 Testing MCP server auto-connect functionality...\n');
 
 // Test 1: Génération des connexions
 const connections = generateSmartConnections(testWorkflow.nodes);
-console.log('✅ Test 1 - Connection generation:');
+console.log('[SUCCESS] Test 1 - Connection generation:');
 console.log(JSON.stringify(connections, null, 2));
 
 // Test 2: Structure complète du workflow
@@ -122,7 +122,7 @@ const completeWorkflow = {
   connections
 };
 
-console.log('\n✅ Test 2 - Complete workflow structure:');
+console.log('\n[SUCCESS] Test 2 - Complete workflow structure:');
 console.log('Workflow name:', completeWorkflow.name);
 console.log('Nodes count:', completeWorkflow.nodes.length);
 console.log('Connections count:', Object.keys(completeWorkflow.connections).length);
@@ -133,7 +133,7 @@ let isValid = true;
 
 for (const [sourceId, sourceConnections] of Object.entries(connections)) {
   if (!nodeIds.has(sourceId)) {
-    console.error(`❌ Source node '${sourceId}' not found`);
+    console.error(`[FAILED] Source node '${sourceId}' not found`);
     isValid = false;
   }
 
@@ -141,7 +141,7 @@ for (const [sourceId, sourceConnections] of Object.entries(connections)) {
     for (const connectionGroup of sourceConnections.main) {
       for (const connection of connectionGroup) {
         if (!nodeIds.has(connection.node)) {
-          console.error(`❌ Target node '${connection.node}' not found`);
+          console.error(`[FAILED] Target node '${connection.node}' not found`);
           isValid = false;
         }
       }
@@ -149,7 +149,7 @@ for (const [sourceId, sourceConnections] of Object.entries(connections)) {
   }
 }
 
-console.log(`\n${isValid ? '✅' : '❌'} Test 3 - Connection validation: ${isValid ? 'PASSED' : 'FAILED'}`);
+console.log(`\n${isValid ? '[SUCCESS]' : '[FAILED]'} Test 3 - Connection validation: ${isValid ? 'PASSED' : 'FAILED'}`);
 
 // Test 4: Vérifier le flux complet
 const expectedFlow = 'trigger-1 → set-1 → webhook-response';
@@ -166,10 +166,10 @@ while (connections[currentNode] && connections[currentNode].main) {
 }
 
 const actualFlowString = actualFlow.join(' → ');
-console.log(`\n✅ Test 4 - Flow verification:`);
+console.log(`\n[SUCCESS] Test 4 - Flow verification:`);
 console.log(`Expected: ${expectedFlow}`);
 console.log(`Actual:   ${actualFlowString}`);
-console.log(`Match: ${expectedFlow === actualFlowString ? '✅ PASSED' : '❌ FAILED'}`);
+console.log(`Match: ${expectedFlow === actualFlowString ? '[SUCCESS] PASSED' : '[FAILED] FAILED'}`);
 
-console.log('\n🎉 MCP server auto-connect functionality verification completed!');
-console.log(`Overall result: ${isValid && expectedFlow === actualFlowString ? '✅ FULLY FUNCTIONAL' : '❌ NEEDS FIXES'}`);
+console.log('\n MCP server auto-connect functionality verification completed!');
+console.log(`Overall result: ${isValid && expectedFlow === actualFlowString ? '[SUCCESS] FULLY FUNCTIONAL' : '[FAILED] NEEDS FIXES'}`);

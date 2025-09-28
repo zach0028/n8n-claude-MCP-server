@@ -26,7 +26,7 @@ function generateSmartConnections(nodes) {
     n.type.includes('response')
   );
 
-  console.log('🔍 Node analysis:');
+  console.log('Node analysis:');
   console.log(`  Triggers: ${triggerNodes.map(n => n.id).join(', ')}`);
   console.log(`  Actions: ${actionNodes.map(n => n.id).join(', ')}`);
   console.log(`  Responses: ${responseNodes.map(n => n.id).join(', ')}`);
@@ -75,15 +75,15 @@ function generateSmartConnections(nodes) {
 // Test avec les données du fichier
 const testData = JSON.parse(fs.readFileSync('test-auto-connect.json', 'utf8'));
 
-console.log('🧪 Testing auto-connect logic...\n');
-console.log('📋 Input nodes:', testData.nodes.map(n => `${n.id} (${n.type})`).join(', '));
+console.log('Testing auto-connect logic...\n');
+console.log(' Input nodes:', testData.nodes.map(n => `${n.id} (${n.type})`).join(', '));
 
 const connections = generateSmartConnections(testData.nodes);
 
-console.log('\n🔗 Generated connections:');
+console.log('\n Generated connections:');
 console.log(JSON.stringify(connections, null, 2));
 
-console.log('\n✅ Connection test completed!');
+console.log('\n[PASSED] Connection test completed!');
 
 // Vérifier que les connexions sont valides
 const nodeIds = new Set(testData.nodes.map(n => n.id));
@@ -91,7 +91,7 @@ let isValid = true;
 
 for (const [sourceId, sourceConnections] of Object.entries(connections)) {
   if (!nodeIds.has(sourceId)) {
-    console.error(`❌ Source node '${sourceId}' not found`);
+    console.error(`[FAILED] Source node '${sourceId}' not found`);
     isValid = false;
   }
 
@@ -99,7 +99,7 @@ for (const [sourceId, sourceConnections] of Object.entries(connections)) {
     for (const connectionGroup of sourceConnections.main) {
       for (const connection of connectionGroup) {
         if (!nodeIds.has(connection.node)) {
-          console.error(`❌ Target node '${connection.node}' not found`);
+          console.error(`[FAILED] Target node '${connection.node}' not found`);
           isValid = false;
         }
       }
@@ -107,4 +107,4 @@ for (const [sourceId, sourceConnections] of Object.entries(connections)) {
   }
 }
 
-console.log(`\n${isValid ? '✅' : '❌'} Connection validation: ${isValid ? 'PASSED' : 'FAILED'}`);
+console.log(`\n${isValid ? '[PASSED]' : '[FAILED]'} Connection validation: ${isValid ? 'PASSED' : 'FAILED'}`);

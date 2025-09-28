@@ -110,13 +110,13 @@ const expectedConnections = {
 };
 
 const isCorrect = JSON.stringify(connections) === JSON.stringify(expectedConnections);
-console.log(`\n✅ Name-based connections test: ${isCorrect ? 'PASSED' : 'FAILED'}`);
+console.log(`\n[SUCCESS] Name-based connections test: ${isCorrect ? 'PASSED' : 'FAILED'}`);
 
 if (isCorrect) {
-  console.log('🎉 SUCCESS: Connections now use node names instead of IDs!');
-  console.log('🔄 Flow: Webhook Trigger → Process Data → Send Response');
+  console.log(' SUCCESS: Connections now use node names instead of IDs!');
+  console.log('[RUNNING] Flow: Webhook Trigger → Process Data → Send Response');
 } else {
-  console.log('❌ FAILED: Connections format incorrect');
+  console.log('[FAILED] FAILED: Connections format incorrect');
   console.log('Expected:', JSON.stringify(expectedConnections, null, 2));
   console.log('Actual:', JSON.stringify(connections, null, 2));
 }

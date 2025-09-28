@@ -11,7 +11,7 @@ async function testMCPServer() {
   // Import du serveur
   const { default: serverModule } = await import('./index-minimal.js');
 
-  console.log('✅ MCP server module loaded successfully');
+  console.log('[SUCCESS] MCP server module loaded successfully');
 
   // Test de la fonction generateSmartConnections directement
   const testNodes = [
@@ -81,14 +81,14 @@ async function testMCPServer() {
   };
 
   const connectionsMatch = JSON.stringify(connections) === JSON.stringify(expectedConnections);
-  console.log(`\n✅ Connection generation test: ${connectionsMatch ? 'PASSED' : 'FAILED'}`);
+  console.log(`\n[SUCCESS] Connection generation test: ${connectionsMatch ? 'PASSED' : 'FAILED'}`);
 
   if (connectionsMatch) {
-    console.log('🎉 SUCCESS: MCP server auto-connect functionality is fully operational!');
-    console.log('🚀 The server can automatically create intelligent workflow connections.');
-    console.log('🔄 Workflow flow: webhook → function → email (perfect automation chain)');
+    console.log(' SUCCESS: MCP server auto-connect functionality is fully operational!');
+    console.log(' The server can automatically create intelligent workflow connections.');
+    console.log('[RUNNING] Workflow flow: webhook → function → email (perfect automation chain)');
   } else {
-    console.log('❌ FAILED: Connection generation does not match expected output');
+    console.log('[FAILED] FAILED: Connection generation does not match expected output');
   }
 
   return connectionsMatch;

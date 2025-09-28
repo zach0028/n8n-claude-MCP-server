@@ -80,7 +80,7 @@ function generateSmartConnections(nodes) {
     node.position = [x, y];
   });
 
-  console.log('🔗 Final connections object:', JSON.stringify(connections, null, 2));
+  console.log('Final connections object:', JSON.stringify(connections, null, 2));
   return connections;
 }
 
@@ -785,7 +785,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ]
           };
 
-          let output = '📋 **Available n8n Node Types** (Common nodes)\n\n';
+          let output = '**Available n8n Node Types** (Common nodes)\n\n';
 
           Object.entries(commonNodeTypes).forEach(([category, nodes]) => {
             output += `## ${category}\n`;
@@ -794,8 +794,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             });
           });
 
-          output += `💡 **Note:** This is a curated list of the most commonly used nodes. n8n has 500+ nodes available.\n\n`;
-          output += `🔗 **Full documentation:** https://docs.n8n.io/integrations/builtin/`;
+          output += `**Note:** This is a curated list of the most commonly used nodes. n8n has 500+ nodes available.\n\n`;
+          output += `**Full documentation:** https://docs.n8n.io/integrations/builtin/`;
 
           return {
             content: [
@@ -810,7 +810,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error listing node types: ${error.message}`,
+                text: `Error listing node types: ${error.message}`,
               },
             ],
             isError: true,
@@ -821,7 +821,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         try {
           const { name, nodes, connections = {}, active = false, autoConnect = true } = request.params.arguments;
 
-          // 🚀 INTELLIGENCE AUTOMATIQUE: Génération des connexions et positions
+          // AUTOMATIC INTELLIGENCE: Connection and position generation
           let smartConnections = connections;
           let processedNodes = [...nodes];
 
@@ -857,7 +857,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               content: [
                 {
                   type: "text",
-                  text: `❌ Validation failed: Missing required fields (name, nodes)`,
+                  text: `Validation failed: Missing required fields (name, nodes)`,
                 },
               ],
               isError: true,
@@ -914,15 +914,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `✅ Workflow "${name}" created successfully!\n\n` +
-                      `📋 **Details:**\n` +
+                text: `Workflow "${name}" created successfully!\n\n` +
+                      `**Details:**\n` +
                       `• ID: ${result.id}\n` +
                       `• Name: ${result.name}\n` +
                       `• Nodes: ${result.nodes?.length || nodes.length}\n` +
                       `• Connections: ${connectionCount}\n` +
                       `• Status: ${result.active ? '🟢 Active' : '🔴 Inactive'}\n` +
                       (autoConnected ? `• 🤖 **Smart connections automatically generated!**\n` : '') +
-                      `\n🔗 **Workflow Structure:**\n` +
+                      `\n**Workflow Structure:**\n` +
                       `${result.nodes?.map(n => `• ${n.name} (${n.type.split('.').pop()})`).join('\n') || 'No nodes'}\n\n` +
                       (autoConnected ? `🧠 **AI Enhancement:** Nodes automatically connected in logical sequence\n\n` : '') +
                       `🌐 **View in n8n:** http://localhost:5678/workflow/${result.id}`,
@@ -960,7 +960,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ **Workflow creation failed**\n\n${errorMessage}${debugInfo}\n\n💡 **Troubleshooting:**\n• Verify n8n is running\n• Check API key validity\n• Ensure proper node structure\n• Try with simpler workflow first`,
+                text: `**Workflow creation failed**\n\n${errorMessage}${debugInfo}\n\n**Troubleshooting:**\n• Verify n8n is running\n• Check API key validity\n• Ensure proper node structure\n• Try with simpler workflow first`,
               },
             ],
             isError: true,
@@ -1070,20 +1070,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `🚀 **Smart Workflow Created!**\n\n` +
-                      `✅ **"${name}"** successfully generated with AI\n\n` +
-                      `📋 **Generated Structure:**\n` +
+                text: `**Smart Workflow Created!**\n\n` +
+                      `**"${name}"** successfully generated with AI\n\n` +
+                      `**Generated Structure:**\n` +
                       `• Pattern: ${pattern.toUpperCase()}\n` +
                       `• Nodes: ${result.nodes.length}\n` +
                       `• Connections: ${Object.keys(smartConnections).length}\n` +
                       `• Status: ${result.active ? '🟢 Active' : '🔴 Inactive'}\n\n` +
-                      `🔗 **Node Flow:**\n` +
+                      `**Node Flow:**\n` +
                       `${result.nodes.map((n, i) => `${i + 1}. ${n.name}`).join(' → ')}\n\n` +
                       `🧠 **AI Features Applied:**\n` +
-                      `• ✅ Smart node positioning\n` +
-                      `• ✅ Automatic logical connections\n` +
-                      `• ✅ Optimized workflow pattern\n` +
-                      `• ✅ Default parameter generation\n\n` +
+                      `• Smart node positioning\n` +
+                      `• Automatic logical connections\n` +
+                      `• Optimized workflow pattern\n` +
+                      `• Default parameter generation\n\n` +
                       (description ? `📝 **Purpose:** ${description}\n\n` : '') +
                       `🌐 **View in n8n:** http://localhost:5678/workflow/${result.id}`,
               },
@@ -1095,7 +1095,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ **Smart Workflow Creation Failed**\n\n${error.response?.data?.message || error.message}\n\n💡 Try with simpler node types: webhook, set, httpRequest`,
+                text: `**Smart Workflow Creation Failed**\n\n${error.response?.data?.message || error.message}\n\nTry with simpler node types: webhook, set, httpRequest`,
               },
             ],
             isError: true,
@@ -1112,7 +1112,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `✅ Workflow ${active ? 'activated' : 'deactivated'} successfully!\n\n` +
+                text: `Workflow ${active ? 'activated' : 'deactivated'} successfully!\n\n` +
                       `Workflow ID: ${id}\n` +
                       `Status: ${active ? 'Active' : 'Inactive'}`,
               },
@@ -1140,7 +1140,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `📋 Workflow Details:\n\n` +
+                text: `Workflow Details:\n\n` +
                       `**Name:** ${workflow.name}\n` +
                       `**ID:** ${workflow.id}\n` +
                       `**Status:** ${workflow.active ? 'Active' : 'Inactive'}\n` +
@@ -1262,7 +1262,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               content: [
                 {
                   type: "text",
-                  text: `❌ Template '${template}' not found. Available templates: ${Object.keys(templates).join(', ')}`,
+                  text: `Template '${template}' not found. Available templates: ${Object.keys(templates).join(', ')}`,
                 },
               ],
               isError: true,
@@ -1291,13 +1291,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `✅ Workflow "${name}" created from template "${template}"!\n\n` +
-                      `📋 **Details:**\n` +
+                text: `Workflow "${name}" created from template "${template}"!\n\n` +
+                      `**Details:**\n` +
                       `• ID: ${result.id}\n` +
                       `• Template: ${template}\n` +
                       `• Description: ${templateData.description}\n` +
                       `• Nodes: ${result.nodes.length}\n\n` +
-                      `🔧 **Next Steps:**\n` +
+                      `**Next Steps:**\n` +
                       `• Configure credentials if needed\n` +
                       `• Customize parameters\n` +
                       `• Activate the workflow\n\n` +
@@ -1310,7 +1310,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error creating workflow from template: ${error.response?.data?.message || error.message}`,
+                text: `Error creating workflow from template: ${error.response?.data?.message || error.message}`,
               },
             ],
             isError: true,
@@ -1463,16 +1463,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `${result.valid ? '✅' : '❌'} **Workflow Validation ${result.valid ? 'PASSED' : 'FAILED'}**\n\n` +
-                      `📊 **Statistics:**\n` +
+                text: `**Workflow Validation ${result.valid ? 'PASSED' : 'FAILED'}**\n\n` +
+                      `**Statistics:**\n` +
                       `• Total Nodes: ${result.stats.nodeCount}\n` +
                       `• Connections: ${result.stats.connectionCount}\n` +
                       `• Triggers: ${result.stats.triggerNodes}\n` +
                       `• Actions: ${result.stats.actionNodes}\n` +
                       `• Node Types: ${result.stats.uniqueNodeTypes}\n\n` +
-                      (result.errors.length > 0 ? `❌ **Errors (${result.errors.length}):**\n${result.errors.map(err => `• ${err}`).join('\n')}\n\n` : '') +
-                      (result.warnings.length > 0 ? `⚠️ **Warnings (${result.warnings.length}):**\n${result.warnings.map(warn => `• ${warn}`).join('\n')}\n\n` : '') +
-                      (result.suggestions.length > 0 ? `💡 **Suggestions (${result.suggestions.length}):**\n${result.suggestions.map(sug => `• ${sug}`).join('\n')}\n\n` : '') +
+                      (result.errors.length > 0 ? `**Errors (${result.errors.length}):**\n${result.errors.map(err => `• ${err}`).join('\n')}\n\n` : '') +
+                      (result.warnings.length > 0 ? `**Warnings (${result.warnings.length}):**\n${result.warnings.map(warn => `• ${warn}`).join('\n')}\n\n` : '') +
+                      (result.suggestions.length > 0 ? `**Suggestions (${result.suggestions.length}):**\n${result.suggestions.map(sug => `• ${sug}`).join('\n')}\n\n` : '') +
                       `**Status:** ${result.valid ? '🟢 Ready for creation!' : '🔴 Fix errors before proceeding'}`,
               },
             ],
@@ -1483,7 +1483,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ **Validation Error**\n\n${error.message}\n\n💡 Ensure you provide valid 'nodes' and 'connections' objects.`,
+                text: `**Validation Error**\n\n${error.message}\n\nEnsure you provide valid 'nodes' and 'connections' objects.`,
               },
             ],
             isError: true,
@@ -1500,7 +1500,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `🚀 Workflow execution started!\n\n` +
+                text: `Workflow execution started!\n\n` +
                       `📋 **Execution Details:**\n` +
                       `• Workflow ID: ${id}\n` +
                       `• Execution ID: ${execution.id}\n` +
@@ -1515,7 +1515,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error executing workflow: ${error.response?.data?.message || error.message}`,
+                text: `Error executing workflow: ${error.response?.data?.message || error.message}`,
               },
             ],
             isError: true,
@@ -1546,7 +1546,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: `📊 **Executions** ${workflowId ? `for workflow ${workflowId}` : '(All workflows)'}\n\n` +
                       `Found ${executions.data.length} executions:\n\n` +
                       executions.data.map(exec =>
-                        `${exec.status === 'success' ? '✅' : exec.status === 'error' ? '❌' : '🔄'} ` +
+                        `${exec.status === 'success' ? '[SUCCESS]' : exec.status === 'error' ? '[ERROR]' : '[RUNNING]'} ` +
                         `**${exec.id}** - ${exec.workflowName || exec.workflowId}\n` +
                         `   Status: ${exec.status} | Started: ${new Date(exec.startedAt).toLocaleString()}\n` +
                         `   Duration: ${exec.stoppedAt ? `${Math.round((new Date(exec.stoppedAt) - new Date(exec.startedAt)) / 1000)}s` : 'Running'}`
@@ -1560,7 +1560,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error listing executions: ${error.response?.data?.message || error.message}`,
+                text: `Error listing executions: ${error.response?.data?.message || error.message}`,
               },
             ],
             isError: true,
@@ -1580,7 +1580,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: `📋 **Execution Details**\n\n` +
                       `**ID:** ${execution.id}\n` +
                       `**Workflow:** ${execution.workflowName || execution.workflowId}\n` +
-                      `**Status:** ${execution.status === 'success' ? '✅ Success' : execution.status === 'error' ? '❌ Error' : '🔄 ' + execution.status}\n` +
+                      `**Status:** ${execution.status === 'success' ? 'Success' : execution.status === 'error' ? 'Error' : execution.status}\n` +
                       `**Started:** ${new Date(execution.startedAt).toLocaleString()}\n` +
                       `**Stopped:** ${execution.stoppedAt ? new Date(execution.stoppedAt).toLocaleString() : 'Still running'}\n` +
                       `**Duration:** ${execution.stoppedAt ? `${Math.round((new Date(execution.stoppedAt) - new Date(execution.startedAt)) / 1000)}s` : 'Running'}\n` +
@@ -1595,7 +1595,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error getting execution: ${error.response?.data?.message || error.message}`,
+                text: `Error getting execution: ${error.response?.data?.message || error.message}`,
               },
             ],
             isError: true,
@@ -1623,7 +1623,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error stopping execution: ${error.response?.data?.message || error.message}`,
+                text: `Error stopping execution: ${error.response?.data?.message || error.message}`,
               },
             ],
             isError: true,
@@ -1648,7 +1648,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `✅ **Workflow Updated**\n\n` +
+                text: `**Workflow Updated**\n\n` +
                       `**ID:** ${result.id}\n` +
                       `**Name:** ${result.name}\n` +
                       `**Status:** ${result.active ? '🟢 Active' : '🔴 Inactive'}\n` +
@@ -1663,7 +1663,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error updating workflow: ${error.response?.data?.message || error.message}`,
+                text: `Error updating workflow: ${error.response?.data?.message || error.message}`,
               },
             ],
             isError: true,
@@ -1682,11 +1682,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `🗑️ **Workflow Deleted**\n\n` +
+                text: `**Workflow Deleted**\n\n` +
                       `**ID:** ${id}\n` +
                       `**Name:** ${workflow.name}\n` +
                       `**Nodes:** ${workflow.nodes.length}\n\n` +
-                      `⚠️ This action cannot be undone.`,
+                      `This action cannot be undone.`,
               },
             ],
           };
@@ -1695,7 +1695,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [
               {
                 type: "text",
-                text: `❌ Error deleting workflow: ${error.response?.data?.message || error.message}`,
+                text: `Error deleting workflow: ${error.response?.data?.message || error.message}`,
               },
             ],
             isError: true,
