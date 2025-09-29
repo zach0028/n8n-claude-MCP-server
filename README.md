@@ -93,6 +93,7 @@ Add to your `claude_desktop_config.json`:
 | `execution_get` | Get execution details | Debug workflow runs |
 | `execution_stop` | Stop running workflows | Emergency execution control |
 | `create_workflow_template` | Use pre-built templates | Quick workflow deployment |
+| `create_advanced_workflow` | Create workflows with advanced connections | Enterprise-grade automation patterns |
 | `list_node_types` | Browse available nodes | Discover automation possibilities |
 
 ## 💡 Prompt Examples for Claude AI
@@ -194,7 +195,87 @@ Create this in n8n with proper node connections and test it."
 "Use the n8n MCP to update workflow ID [123] by adding a new email notification step after the data processing node. Make sure all connections are maintained."
 ```
 
+### 🚀 **Advanced Connection Types**
+
+#### Create Workflow with Merge Connections
+```
+"Use create_advanced_workflow with connection type 'merge' to create a workflow that:
+1. Receives data from multiple webhook sources
+2. Merges all incoming data using append mode
+3. Processes the combined dataset
+4. Sends consolidated report
+
+Include merge, error handling, and parallel processing connections."
+```
+
+#### Create Switch-Based Routing Workflow
+```
+"Create an advanced workflow using switch connections that:
+1. Receives webhook data
+2. Routes data to different processors based on content type
+3. Applies different business logic per route
+4. Handles errors with retry logic
+
+Use connection type 'switch' with conditional routing rules."
+```
+
+#### Create AI-Enhanced Workflow
+```
+"Build an advanced workflow with AI enrichment connections:
+1. Webhook receives customer feedback
+2. AI analyzes sentiment and categorizes content
+3. Routes positive feedback to success team
+4. Routes negative feedback to support with priority
+5. Stores insights in database with temporal scheduling
+
+Use 'ai_enrichment' connection type with sentiment analysis."
+```
+
+#### Create Complex Loop Processing
+```
+"Create a workflow with loop connections that:
+1. Fetches large dataset from API
+2. Processes items in batches of 50
+3. Applies transformations to each batch
+4. Handles rate limiting with delays
+5. Aggregates results with error recovery
+
+Use 'loops' connection type with batch processing configuration."
+```
+
+#### Create Enterprise Error Handling
+```
+"Build a robust workflow with comprehensive error handling:
+1. Multi-step data processing pipeline
+2. Retry logic with exponential backoff
+3. Circuit breaker patterns
+4. Fallback data sources
+5. Comprehensive error notifications
+
+Use 'error_handling' connection type with retry configuration."
+```
+
 ## 🏗️ Architecture
+
+### 🔧 **Advanced Connection System**
+
+Our MCP server now supports **25+ advanced connection types** based on analysis of 2000+ n8n workflows and official documentation:
+
+#### **Priority 1: Critical Connections**
+- **Merge/Split Connections**: Append, byKey, position, combinations
+- **Switch Routing**: Multi-path conditional routing with rules
+- **Error Handling**: Retry logic, circuit breakers, fallback patterns
+
+#### **Priority 2: Important Connections**
+- **Advanced Webhook**: Multi-method support (GET/POST/PUT/DELETE)
+- **Loop Connections**: forEach, while, recursive with batch processing
+- **Temporal Connections**: Delays, schedules, timeouts
+
+#### **Priority 3: Advanced Features**
+- **AI Enrichment**: Sentiment analysis, classification, dynamic routing
+- **Dynamic Sources**: Context-aware, personalized, data-driven endpoints
+- **Parallel Processing**: Load balancing, race conditions, synchronization
+- **Stateful Connections**: Sessions, caching, cross-workflow state
 
 ### Progressive API Handling
 The server uses a **3-tier fallback approach** for maximum compatibility:

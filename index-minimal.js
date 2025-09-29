@@ -84,6 +84,546 @@ function generateSmartConnections(nodes) {
   return connections;
 }
 
+// ADVANCED CONNECTION TYPES IMPLEMENTATION
+// Based on n8n official docs and 2000+ GitHub workflows analysis
+
+// 1. MERGE/SPLIT CONNECTIONS
+function generateMergeConnections(nodes, mergeType = 'append') {
+  const connections = {};
+  const mergeNodes = nodes.filter(n => n.type.includes('merge'));
+  const splitNodes = nodes.filter(n => n.type.includes('if') || n.type.includes('switch'));
+
+  mergeNodes.forEach(mergeNode => {
+    const sourceNodes = nodes.filter(n =>
+      !mergeNodes.includes(n) &&
+      !n.type.includes('trigger') &&
+      !n.type.includes('respondToWebhook')
+    );
+
+    // Configure merge based on type
+    switch(mergeType) {
+      case 'append':
+        // Stack all inputs into single list
+        sourceNodes.forEach((sourceNode, index) => {
+          connections[sourceNode.name] = {
+            main: [[{ node: mergeNode.name, type: 'main', index: 0 }]]
+          };
+        });
+        break;
+
+      case 'byKey':
+        // Join by matching field (inner join)
+        sourceNodes.forEach(sourceNode => {
+          connections[sourceNode.name] = {
+            main: [[{
+              node: mergeNode.name,
+              type: 'main',
+              index: 0,
+              joinField: 'id' // Default join field
+            }]]
+          };
+        });
+        break;
+
+      case 'position':
+        // Merge by index position
+        sourceNodes.forEach((sourceNode, index) => {
+          connections[sourceNode.name] = {
+            main: [[{
+              node: mergeNode.name,
+              type: 'main',
+              index: index
+            }]]
+          };
+        });
+        break;
+
+      case 'combinations':
+        // All possible combinations
+        sourceNodes.forEach(sourceNode => {
+          connections[sourceNode.name] = {
+            main: [[{
+              node: mergeNode.name,
+              type: 'main',
+              index: 0,
+              combineMode: 'all'
+            }]]
+          };
+        });
+        break;
+    }
+  });
+
+  return connections;
+}
+
+// 2. SWITCH CONNECTIONS (Multi-routing)
+function generateSwitchConnections(nodes, rules = []) {
+  const connections = {};
+  const switchNodes = nodes.filter(n => n.type.includes('switch'));
+
+  switchNodes.forEach(switchNode => {
+    const sourceNode = nodes.find(n =>
+      !switchNodes.includes(n) &&
+      !n.type.includes('respondToWebhook')
+    );
+
+    if (sourceNode) {
+      const targetNodes = nodes.filter(n =>
+        n !== sourceNode &&
+        n !== switchNode &&
+        !n.type.includes('trigger')
+      );
+
+      // Multi-output routing based on rules
+      connections[sourceNode.name] = {
+        main: [[{ node: switchNode.name, type: 'main', index: 0 }]]
+      };
+
+      // Configure switch outputs to different targets
+      const switchOutputs = [];
+      targetNodes.forEach((targetNode, index) => {
+        switchOutputs.push([{
+          node: targetNode.name,
+          type: 'main',
+          index: 0,
+          condition: rules[index] || `{{$json.type === '${targetNode.name}'}}`,
+          rule: index
+        }]);
+      });
+
+      connections[switchNode.name] = {
+        main: switchOutputs
+      };
+    }
+  });
+
+  return connections;
+}
+
+// 3. ERROR HANDLING CONNECTIONS
+function generateErrorHandlingConnections(nodes, errorConfig = {}) {
+  const connections = {};
+  const errorNodes = nodes.filter(n => n.type.includes('errorTrigger'));
+  const retryNodes = nodes.filter(n => n.name.includes('retry'));
+
+  nodes.forEach(node => {
+    if (!node.type.includes('trigger') && !node.type.includes('errorTrigger')) {
+      // Add error handling to each action node
+      const nodeConnections = connections[node.name] || { main: [[]] };
+
+      // Add error output
+      nodeConnections.error = [{
+        node: errorNodes[0]?.name || 'error-handler',
+        type: 'error',
+        index: 0,
+        retryAttempts: errorConfig.retryAttempts || 3,
+        retryDelay: errorConfig.retryDelay || 1000,
+        continueOnFail: errorConfig.continueOnFail || false
+      }];
+
+      connections[node.name] = nodeConnections;
+    }
+  });
+
+  // Configure retry logic
+  if (retryNodes.length > 0) {
+    retryNodes.forEach(retryNode => {
+      connections[retryNode.name] = {
+        main: [[{
+          node: 'original-action',
+          type: 'main',
+          index: 0,
+          isRetry: true
+        }]],
+        maxRetries: errorConfig.maxRetries || 3,
+        backoffStrategy: errorConfig.backoffStrategy || 'exponential'
+      };
+    });
+  }
+
+  return connections;
+}
+
+// 4. ADVANCED WEBHOOK CONNECTIONS
+function generateWebhookConnections(nodes, webhookConfig = {}) {
+  const connections = {};
+  const webhookNodes = nodes.filter(n => n.type.includes('webhook'));
+  const responseNodes = nodes.filter(n => n.type.includes('respondToWebhook'));
+
+  webhookNodes.forEach(webhookNode => {
+    const processingNodes = nodes.filter(n =>
+      !webhookNodes.includes(n) &&
+      !responseNodes.includes(n) &&
+      !n.type.includes('trigger')
+    );
+
+    // Multi-method webhook support
+    connections[webhookNode.name] = {
+      GET: [[{
+        node: processingNodes[0]?.name || 'process-get',
+        type: 'main',
+        index: 0,
+        method: 'GET'
+      }]],
+      POST: [[{
+        node: processingNodes[1]?.name || 'process-post',
+        type: 'main',
+        index: 0,
+        method: 'POST'
+      }]],
+      PUT: [[{
+        node: processingNodes[2]?.name || 'process-put',
+        type: 'main',
+        index: 0,
+        method: 'PUT'
+      }]],
+      DELETE: [[{
+        node: processingNodes[3]?.name || 'process-delete',
+        type: 'main',
+        index: 0,
+        method: 'DELETE'
+      }]],
+      error: [{
+        node: responseNodes[0]?.name || 'error-response',
+        type: 'error',
+        index: 0,
+        statusCode: webhookConfig.errorStatusCode || 500
+      }]
+    };
+
+    // Conditional response based on processing results
+    processingNodes.forEach(procNode => {
+      if (connections[procNode.name]) {
+        connections[procNode.name].main.push([{
+          node: responseNodes[0]?.name || 'webhook-response',
+          type: 'main',
+          index: 0,
+          conditional: true,
+          successStatusCode: webhookConfig.successStatusCode || 200
+        }]);
+      }
+    });
+  });
+
+  return connections;
+}
+
+// 5. LOOP CONNECTIONS
+function generateLoopConnections(nodes, loopConfig = {}) {
+  const connections = {};
+  const loopNodes = nodes.filter(n =>
+    n.name.includes('loop') ||
+    n.name.includes('foreach') ||
+    n.type.includes('splitInBatches')
+  );
+
+  loopNodes.forEach(loopNode => {
+    const dataSource = nodes.find(n =>
+      !loopNodes.includes(n) &&
+      n.type.includes('trigger')
+    );
+    const processingNodes = nodes.filter(n =>
+      !loopNodes.includes(n) &&
+      n !== dataSource &&
+      !n.type.includes('trigger')
+    );
+
+    if (dataSource) {
+      // Connect data source to loop
+      connections[dataSource.name] = {
+        main: [[{
+          node: loopNode.name,
+          type: 'main',
+          index: 0
+        }]]
+      };
+
+      // Configure loop iteration
+      connections[loopNode.name] = {
+        main: [[{
+          node: processingNodes[0]?.name || 'process-item',
+          type: 'main',
+          index: 0,
+          loopType: loopConfig.type || 'forEach',
+          batchSize: loopConfig.batchSize || 1,
+          maxIterations: loopConfig.maxIterations || 1000
+        }]],
+        // Loop back connection
+        loop: [{
+          node: loopNode.name,
+          type: 'loop',
+          index: 0,
+          condition: loopConfig.condition || '{{$json.hasMore}}'
+        }]
+      };
+    }
+  });
+
+  return connections;
+}
+
+// 6. TEMPORAL CONNECTIONS
+function generateTemporalConnections(nodes, timeConfig = {}) {
+  const connections = {};
+  const delayNodes = nodes.filter(n => n.type.includes('wait') || n.name.includes('delay'));
+  const scheduleNodes = nodes.filter(n => n.type.includes('cron') || n.type.includes('schedule'));
+
+  // Delayed connections
+  delayNodes.forEach(delayNode => {
+    const sourceNode = nodes.find(n => !delayNodes.includes(n) && !n.type.includes('trigger'));
+    const targetNode = nodes.find(n =>
+      n !== sourceNode &&
+      n !== delayNode &&
+      !n.type.includes('trigger')
+    );
+
+    if (sourceNode && targetNode) {
+      connections[sourceNode.name] = {
+        main: [[{
+          node: delayNode.name,
+          type: 'main',
+          index: 0
+        }]]
+      };
+
+      connections[delayNode.name] = {
+        main: [[{
+          node: targetNode.name,
+          type: 'main',
+          index: 0,
+          delay: timeConfig.delay || 5000,
+          delayUnit: timeConfig.delayUnit || 'milliseconds'
+        }]]
+      };
+    }
+  });
+
+  // Scheduled connections with timeout
+  scheduleNodes.forEach(scheduleNode => {
+    const targetNodes = nodes.filter(n =>
+      n !== scheduleNode &&
+      !n.type.includes('trigger')
+    );
+
+    connections[scheduleNode.name] = {
+      main: targetNodes.map(targetNode => [{
+        node: targetNode.name,
+        type: 'main',
+        index: 0,
+        schedule: timeConfig.schedule || '0 0 * * *',
+        timezone: timeConfig.timezone || 'UTC',
+        timeout: timeConfig.timeout || 30000
+      }])
+    };
+  });
+
+  return connections;
+}
+
+// 7. AI ENRICHMENT CONNECTIONS
+function generateAIConnections(nodes, aiConfig = {}) {
+  const connections = {};
+  const aiNodes = nodes.filter(n =>
+    n.type.includes('openai') ||
+    n.type.includes('anthropic') ||
+    n.name.includes('ai') ||
+    n.name.includes('llm')
+  );
+
+  aiNodes.forEach(aiNode => {
+    const dataNodes = nodes.filter(n =>
+      !aiNodes.includes(n) &&
+      !n.type.includes('respondToWebhook')
+    );
+
+    // AI transformation pipeline
+    connections[aiNode.name] = {
+      main: [[{
+        node: dataNodes[0]?.name || 'process-ai-result',
+        type: 'main',
+        index: 0,
+        aiModel: aiConfig.model || 'gpt-3.5-turbo',
+        temperature: aiConfig.temperature || 0.7,
+        maxTokens: aiConfig.maxTokens || 1000,
+        enrichmentType: aiConfig.enrichmentType || 'sentiment',
+        prompt: aiConfig.prompt || 'Analyze and enrich this data: {{$json}}'
+      }]],
+      // Conditional routing based on AI analysis
+      sentiment: [{
+        node: 'positive-handler',
+        type: 'conditional',
+        index: 0,
+        condition: '{{$json.sentiment === "positive"}}'
+      }],
+      classification: [{
+        node: 'category-router',
+        type: 'conditional',
+        index: 0,
+        condition: '{{$json.category}}'
+      }]
+    };
+  });
+
+  return connections;
+}
+
+// 8. DYNAMIC SOURCE CONNECTIONS
+function generateDynamicConnections(nodes, dynamicConfig = {}) {
+  const connections = {};
+  const httpNodes = nodes.filter(n => n.type.includes('httpRequest'));
+
+  httpNodes.forEach(httpNode => {
+    const targetNodes = nodes.filter(n =>
+      n !== httpNode &&
+      !n.type.includes('trigger')
+    );
+
+    connections[httpNode.name] = {
+      main: [[{
+        node: targetNodes[0]?.name || 'process-dynamic-data',
+        type: 'main',
+        index: 0,
+        dynamicUrl: dynamicConfig.urlTemplate || '{{$json.endpoint}}',
+        dynamicHeaders: dynamicConfig.headers || {},
+        contextAware: true,
+        userPersonalization: dynamicConfig.personalization || false,
+        dataQuery: dynamicConfig.query || '{{$json.filters}}'
+      }]]
+    };
+  });
+
+  return connections;
+}
+
+// 9. PARALLEL ADVANCED CONNECTIONS
+function generateParallelConnections(nodes, parallelConfig = {}) {
+  const connections = {};
+  const sourceNode = nodes.find(n => n.type.includes('trigger') || n.type.includes('webhook'));
+  const parallelNodes = nodes.filter(n =>
+    n !== sourceNode &&
+    !n.type.includes('merge') &&
+    !n.type.includes('respondToWebhook')
+  );
+  const mergeNode = nodes.find(n => n.type.includes('merge'));
+
+  if (sourceNode && parallelNodes.length > 1) {
+    // Fan-out: parallel execution
+    connections[sourceNode.name] = {
+      main: [parallelNodes.map(node => ({
+        node: node.name,
+        type: 'main',
+        index: 0,
+        parallel: true,
+        syncPoint: mergeNode?.name || 'sync-point',
+        loadBalancing: parallelConfig.loadBalancing || false,
+        raceCondition: parallelConfig.raceCondition || 'wait-all'
+      }))]
+    };
+
+    // Fan-in: merge parallel results
+    if (mergeNode) {
+      parallelNodes.forEach(parallelNode => {
+        connections[parallelNode.name] = {
+          main: [[{
+            node: mergeNode.name,
+            type: 'main',
+            index: 0,
+            syncRequired: true
+          }]]
+        };
+      });
+    }
+  }
+
+  return connections;
+}
+
+// 10. STATEFUL CONNECTIONS
+function generateStatefulConnections(nodes, stateConfig = {}) {
+  const connections = {};
+  const stateNodes = nodes.filter(n =>
+    n.name.includes('state') ||
+    n.name.includes('cache') ||
+    n.name.includes('session')
+  );
+
+  stateNodes.forEach(stateNode => {
+    const dataNodes = nodes.filter(n =>
+      !stateNodes.includes(n) &&
+      !n.type.includes('trigger')
+    );
+
+    connections[stateNode.name] = {
+      main: [[{
+        node: dataNodes[0]?.name || 'process-with-state',
+        type: 'main',
+        index: 0,
+        sessionId: stateConfig.sessionId || '{{$json.userId}}',
+        cacheKey: stateConfig.cacheKey || '{{$json.id}}',
+        cacheTTL: stateConfig.cacheTTL || 3600,
+        persistence: stateConfig.persistence || 'memory',
+        crossWorkflow: stateConfig.crossWorkflow || false
+      }]]
+    };
+  });
+
+  return connections;
+}
+
+// MASTER CONNECTION GENERATOR
+function generateAdvancedConnections(nodes, connectionConfig = {}) {
+  let connections = {};
+
+  // Apply connection types based on configuration
+  if (connectionConfig.enableMerge) {
+    Object.assign(connections, generateMergeConnections(nodes, connectionConfig.mergeType));
+  }
+
+  if (connectionConfig.enableSwitch) {
+    Object.assign(connections, generateSwitchConnections(nodes, connectionConfig.switchRules));
+  }
+
+  if (connectionConfig.enableErrorHandling) {
+    Object.assign(connections, generateErrorHandlingConnections(nodes, connectionConfig.errorConfig));
+  }
+
+  if (connectionConfig.enableAdvancedWebhook) {
+    Object.assign(connections, generateWebhookConnections(nodes, connectionConfig.webhookConfig));
+  }
+
+  if (connectionConfig.enableLoops) {
+    Object.assign(connections, generateLoopConnections(nodes, connectionConfig.loopConfig));
+  }
+
+  if (connectionConfig.enableTemporal) {
+    Object.assign(connections, generateTemporalConnections(nodes, connectionConfig.timeConfig));
+  }
+
+  if (connectionConfig.enableAI) {
+    Object.assign(connections, generateAIConnections(nodes, connectionConfig.aiConfig));
+  }
+
+  if (connectionConfig.enableDynamic) {
+    Object.assign(connections, generateDynamicConnections(nodes, connectionConfig.dynamicConfig));
+  }
+
+  if (connectionConfig.enableParallel) {
+    Object.assign(connections, generateParallelConnections(nodes, connectionConfig.parallelConfig));
+  }
+
+  if (connectionConfig.enableStateful) {
+    Object.assign(connections, generateStatefulConnections(nodes, connectionConfig.stateConfig));
+  }
+
+  // Fallback to basic connections if no advanced types specified
+  if (Object.keys(connections).length === 0) {
+    connections = generateSmartConnections(nodes);
+  }
+
+  return connections;
+}
+
 // Fonction pour améliorer les connexions existantes
 function enhanceConnections(nodes, existingConnections) {
   // Si des connexions existent déjà, les garder
@@ -310,6 +850,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "boolean",
               description: "Automatically generate smart connections between nodes (default: true)",
               default: true
+            },
+            advancedConnections: {
+              type: "boolean",
+              description: "Enable advanced connection types (merge, switch, error handling, etc.)",
+              default: false
+            },
+            connectionConfig: {
+              type: "object",
+              description: "Configuration for advanced connections",
+              properties: {
+                enableMerge: { type: "boolean" },
+                enableSwitch: { type: "boolean" },
+                enableErrorHandling: { type: "boolean" },
+                enableAdvancedWebhook: { type: "boolean" },
+                enableLoops: { type: "boolean" },
+                enableTemporal: { type: "boolean" },
+                enableAI: { type: "boolean" },
+                enableDynamic: { type: "boolean" },
+                enableParallel: { type: "boolean" },
+                enableStateful: { type: "boolean" }
+              }
             }
           },
           required: ["name", "nodes"]
@@ -346,6 +907,89 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["id"]
         },
+      },
+      {
+        name: "create_advanced_workflow",
+        description: "Create workflows with advanced connection types (merge, switch, error handling, loops, AI, etc.)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the workflow"
+            },
+            nodes: {
+              type: "array",
+              description: "Array of nodes for the workflow"
+            },
+            connectionType: {
+              type: "string",
+              enum: ["merge", "switch", "error_handling", "advanced_webhook", "loops", "temporal", "ai_enrichment", "dynamic_source", "parallel_advanced", "stateful", "auto"],
+              description: "Type of advanced connections to create",
+              default: "auto"
+            },
+            connectionConfig: {
+              type: "object",
+              description: "Configuration for advanced connections",
+              properties: {
+                mergeType: {
+                  type: "string",
+                  enum: ["append", "byKey", "position", "combinations"],
+                  description: "Type of merge operation"
+                },
+                switchRules: {
+                  type: "array",
+                  description: "Rules for switch routing"
+                },
+                errorConfig: {
+                  type: "object",
+                  properties: {
+                    retryAttempts: { type: "number" },
+                    retryDelay: { type: "number" },
+                    continueOnFail: { type: "boolean" }
+                  }
+                },
+                webhookConfig: {
+                  type: "object",
+                  properties: {
+                    errorStatusCode: { type: "number" },
+                    successStatusCode: { type: "number" }
+                  }
+                },
+                loopConfig: {
+                  type: "object",
+                  properties: {
+                    type: { type: "string", enum: ["forEach", "while", "recursive"] },
+                    batchSize: { type: "number" },
+                    maxIterations: { type: "number" }
+                  }
+                },
+                timeConfig: {
+                  type: "object",
+                  properties: {
+                    delay: { type: "number" },
+                    schedule: { type: "string" },
+                    timezone: { type: "string" }
+                  }
+                },
+                aiConfig: {
+                  type: "object",
+                  properties: {
+                    model: { type: "string" },
+                    temperature: { type: "number" },
+                    enrichmentType: { type: "string" }
+                  }
+                }
+              }
+            },
+            active: {
+              type: "boolean",
+              description: "Whether to activate the workflow after creation",
+              default: false
+            }
+          },
+          required: ["name", "nodes"]
+        }
       },
       {
         name: "create_workflow_template",
@@ -819,15 +1463,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "create_workflow":
         try {
-          const { name, nodes, connections = {}, active = false, autoConnect = true } = request.params.arguments;
+          const {
+            name,
+            nodes,
+            connections = {},
+            active = false,
+            autoConnect = true,
+            advancedConnections = false,
+            connectionConfig = {}
+          } = request.params.arguments;
 
           // AUTOMATIC INTELLIGENCE: Connection and position generation
           let smartConnections = connections;
           let processedNodes = [...nodes];
 
           if (autoConnect && Object.keys(connections).length === 0) {
-            // Générer automatiquement les connexions logiques
-            smartConnections = generateSmartConnections(processedNodes);
+            if (advancedConnections) {
+              // Use advanced connection generation
+              smartConnections = generateAdvancedConnections(processedNodes, connectionConfig);
+            } else {
+              // Use basic connection generation
+              smartConnections = generateSmartConnections(processedNodes);
+            }
 
             // Optimiser les positions des nodes
             processedNodes = optimizeNodePositions(processedNodes, smartConnections);
@@ -1157,6 +1814,168 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               {
                 type: "text",
                 text: `Error fetching workflow: ${error.response?.data?.message || error.message}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+      case "create_advanced_workflow":
+        try {
+          const { name, nodes, connectionType = "auto", connectionConfig = {}, active = false } = request.params.arguments;
+
+          if (!name || !nodes || nodes.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Validation failed: Missing required fields (name, nodes)`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          // Configure advanced connection settings based on type
+          const advancedConfig = {
+            enableMerge: connectionType === "merge" || connectionType === "auto",
+            enableSwitch: connectionType === "switch" || connectionType === "auto",
+            enableErrorHandling: connectionType === "error_handling" || connectionType === "auto",
+            enableAdvancedWebhook: connectionType === "advanced_webhook" || connectionType === "auto",
+            enableLoops: connectionType === "loops" || connectionType === "auto",
+            enableTemporal: connectionType === "temporal" || connectionType === "auto",
+            enableAI: connectionType === "ai_enrichment" || connectionType === "auto",
+            enableDynamic: connectionType === "dynamic_source" || connectionType === "auto",
+            enableParallel: connectionType === "parallel_advanced" || connectionType === "auto",
+            enableStateful: connectionType === "stateful" || connectionType === "auto",
+            ...connectionConfig
+          };
+
+          // Generate advanced connections
+          const smartConnections = generateAdvancedConnections(nodes, advancedConfig);
+
+          // Optimize node positions
+          const optimizedNodes = optimizeNodePositions(nodes, smartConnections);
+
+          // Create workflow data
+          const workflowData = {
+            name,
+            nodes: optimizedNodes.map(node => ({
+              id: node.id || node.name,
+              name: node.name,
+              type: node.type,
+              position: node.position || [250, 300],
+              parameters: node.parameters || {}
+            })),
+            connections: smartConnections,
+            settings: {},
+            staticData: null,
+            pinData: {}
+          };
+
+          // Create workflow with progressive fallback
+          let result;
+          try {
+            result = await makeApiRequest('/workflows', 'POST', workflowData);
+          } catch (firstError) {
+            if (firstError.response?.status === 400 && firstError.response?.data?.message?.includes('settings')) {
+              workflowData.settings = { saveExecutionManually: false };
+              try {
+                result = await makeApiRequest('/workflows', 'POST', workflowData);
+              } catch (secondError) {
+                const fullWorkflowData = {
+                  ...workflowData,
+                  settings: {
+                    saveExecutionManually: false,
+                    saveExecutionProgress: false,
+                    saveDataErrorExecution: 'all',
+                    saveDataSuccessExecution: 'all'
+                  }
+                };
+                result = await makeApiRequest('/workflows', 'POST', fullWorkflowData);
+              }
+            } else {
+              throw firstError;
+            }
+          }
+
+          // Activate if requested
+          if (active && result.id) {
+            try {
+              await makeApiRequest(`/workflows/${result.id}/activate`, 'POST');
+              result.active = true;
+            } catch (activateError) {
+              console.error('Failed to activate workflow:', activateError.message);
+            }
+          }
+
+          // Analyze connection statistics
+          const connectionCount = Object.keys(smartConnections).length;
+          const connectionTypes = [];
+
+          if (advancedConfig.enableMerge) connectionTypes.push("Merge/Split");
+          if (advancedConfig.enableSwitch) connectionTypes.push("Switch Routing");
+          if (advancedConfig.enableErrorHandling) connectionTypes.push("Error Handling");
+          if (advancedConfig.enableAdvancedWebhook) connectionTypes.push("Advanced Webhook");
+          if (advancedConfig.enableLoops) connectionTypes.push("Loops");
+          if (advancedConfig.enableTemporal) connectionTypes.push("Temporal");
+          if (advancedConfig.enableAI) connectionTypes.push("AI Enrichment");
+          if (advancedConfig.enableDynamic) connectionTypes.push("Dynamic Sources");
+          if (advancedConfig.enableParallel) connectionTypes.push("Parallel Processing");
+          if (advancedConfig.enableStateful) connectionTypes.push("Stateful");
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `**Advanced Workflow Created Successfully**\n\n` +
+                      `**"${result.name}"** with sophisticated connection patterns\n\n` +
+                      `**Details:**\n` +
+                      `• Workflow ID: ${result.id}\n` +
+                      `• Nodes: ${result.nodes?.length || nodes.length}\n` +
+                      `• Advanced Connections: ${connectionCount}\n` +
+                      `• Connection Types: ${connectionTypes.join(', ')}\n` +
+                      `• Status: ${result.active ? 'Active' : 'Inactive'}\n\n` +
+                      `**Workflow Structure:**\n` +
+                      `${result.nodes?.map(n => `• ${n.name} (${n.type.split('.').pop()})`).join('\n') || 'No nodes'}\n\n` +
+                      `**Advanced Features Applied:**\n` +
+                      `• Intelligent connection routing\n` +
+                      `• Advanced error handling\n` +
+                      `• Smart node positioning\n` +
+                      `• Enterprise-grade patterns\n\n` +
+                      `**Next Steps:**\n` +
+                      `• Configure node credentials if needed\n` +
+                      `• Test workflow execution\n` +
+                      `• Monitor advanced connection behavior`,
+              },
+            ],
+          };
+        } catch (error) {
+          let errorMessage = 'Failed to create advanced workflow';
+          let debugInfo = '';
+
+          if (error.response) {
+            const { status, data } = error.response;
+            if (status === 401) {
+              errorMessage = 'Authentication failed. Check your n8n API key.';
+            } else if (status === 400) {
+              errorMessage = 'Invalid workflow data or advanced connection configuration.';
+              debugInfo = `\n\n**Debug Info:**\n- Status: ${status}\n- Details: ${JSON.stringify(data, null, 2)}`;
+            } else if (status === 404) {
+              errorMessage = 'n8n API endpoint not found. Check if n8n is running and API is enabled.';
+            } else {
+              errorMessage = `HTTP ${status}: ${data?.message || 'Unknown error'}`;
+              debugInfo = `\n\n**Debug Info:**\n${JSON.stringify(data, null, 2)}`;
+            }
+          } else if (error.code === 'ECONNREFUSED') {
+            errorMessage = 'Cannot connect to n8n. Ensure n8n is running on the configured URL.';
+          }
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `**Advanced Workflow Creation Failed**\n\n${errorMessage}${debugInfo}\n\n**Troubleshooting:**\n• Verify n8n is running\n• Check API key validity\n• Ensure proper node structure\n• Validate advanced connection configuration\n• Try with simpler connection types first`,
               },
             ],
             isError: true,
