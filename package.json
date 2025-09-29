@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "MCP Server for n8n integration with Claude",
   "type": "module",
-  "main": "index.js",
+  "main": "index-complete.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node index-complete.js",
+    "start:basic": "node index.js",
+    "start:minimal": "node index-minimal.js",
+    "dev": "nodemon index-complete.js",
+    "test": "node test-dynamic-node-discovery.cjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.2",

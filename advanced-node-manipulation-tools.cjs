@@ -34,6 +34,44 @@ try {
 // Cache pour les définitions de nœuds récupérées dynamiquement
 const nodeDefinitionCache = new Map();
 
+// File path for persistent cache
+const CACHE_FILE_PATH = path.join(__dirname, '.node-cache.json');
+
+// Load cache from disk on startup
+function loadCacheFromDisk() {
+  try {
+    if (fs.existsSync(CACHE_FILE_PATH)) {
+      const cacheData = JSON.parse(fs.readFileSync(CACHE_FILE_PATH, 'utf8'));
+      Object.entries(cacheData).forEach(([key, value]) => {
+        nodeDefinitionCache.set(key, value);
+      });
+      console.error(`Loaded ${nodeDefinitionCache.size} node definitions from cache`);
+    }
+  } catch (error) {
+    console.error('Error loading cache from disk:', error.message);
+  }
+}
+
+// Save cache to disk
+function saveCacheToDisk() {
+  try {
+    const cacheData = Object.fromEntries(nodeDefinitionCache);
+    fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(cacheData, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Error saving cache to disk:', error.message);
+  }
+}
+
+// Auto-save cache every 5 minutes
+setInterval(() => {
+  if (nodeDefinitionCache.size > 0) {
+    saveCacheToDisk();
+  }
+}, 5 * 60 * 1000);
+
+// Load cache on startup
+loadCacheFromDisk();
+
 /**
  * NOUVEAU: Récupère la définition d'un nœud directement depuis l'API n8n
  * Système de fallback universel pour supporter 100% des nœuds n8n
@@ -90,6 +128,9 @@ async function getNodeDefinitionFromN8n(nodeType, n8nApiUrl, n8nApiKey) {
 
     // Mettre en cache
     nodeDefinitionCache.set(nodeType, nodeDefinition);
+
+    // Sauvegarder sur disque
+    saveCacheToDisk();
 
     return nodeDefinition;
 
