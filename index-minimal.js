@@ -516,6 +516,381 @@ if (environments.size === 0) {
   });
 }
 
+// Clean workflow data for n8n API - removes properties that cause 400 errors
+function sanitizeWorkflowForAPI(workflowData) {
+  // Complete list based on n8n API documentation and source analysis
+  const allowedWorkflowProps = ['name', 'nodes', 'connections', 'active', 'settings', 'staticData', 'pinData', 'tags', 'meta', 'versionId'];
+  const allowedNodeProps = [
+    'id', 'name', 'type', 'typeVersion', 'position', 'parameters',
+    'credentials', 'disabled', 'notes', 'webhookId', 'retryOnFail',
+    'maxTries', 'waitBetweenTries', 'alwaysOutputData', 'executeOnce',
+    'continueOnFail', 'onError', 'color', 'notesInFlow'
+  ];
+
+  // Validate required fields
+  if (!workflowData.name || typeof workflowData.name !== 'string') {
+    throw new Error('Workflow name is required and must be a string');
+  }
+  if (!workflowData.nodes || !Array.isArray(workflowData.nodes)) {
+    throw new Error('Workflow nodes array is required');
+  }
+  if (workflowData.nodes.length === 0) {
+    throw new Error('Workflow must contain at least one node');
+  }
+
+  // Validate and clean nodes with comprehensive error checking
+  const cleanedNodes = workflowData.nodes.map((node, index) => {
+    // Validate required node fields
+    if (!node.name || typeof node.name !== 'string') {
+      throw new Error(`Node at index ${index}: name is required and must be a string`);
+    }
+    if (!node.type || typeof node.type !== 'string') {
+      throw new Error(`Node '${node.name}': type is required and must be a string`);
+    }
+
+    // Generate valid ID if missing
+    if (!node.id) {
+      node.id = node.name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '');
+      if (!node.id) {
+        node.id = `node_${index}`;
+      }
+    }
+
+    // Validate and fix typeVersion
+    if (!node.typeVersion || typeof node.typeVersion !== 'number') {
+      node.typeVersion = 1;
+    }
+
+    // Validate and fix position
+    if (!Array.isArray(node.position) || node.position.length !== 2 ||
+        typeof node.position[0] !== 'number' || typeof node.position[1] !== 'number') {
+      node.position = [250 + (index * 200), 300];
+    }
+
+    // Ensure parameters is an object
+    if (node.parameters && typeof node.parameters !== 'object') {
+      node.parameters = {};
+    }
+
+    // Clean node properties
+    const cleanNode = {};
+    allowedNodeProps.forEach(prop => {
+      if (node[prop] !== undefined) {
+        cleanNode[prop] = node[prop];
+      }
+    });
+
+    // Set required defaults
+    if (!cleanNode.parameters) {
+      cleanNode.parameters = {};
+    }
+
+    return cleanNode;
+  });
+
+  // Build cleaned workflow
+  const cleaned = {
+    name: workflowData.name,
+    nodes: cleanedNodes
+  };
+
+  // Clean workflow-level properties
+  allowedWorkflowProps.forEach(prop => {
+    if (prop !== 'name' && prop !== 'nodes' && workflowData[prop] !== undefined) {
+      cleaned[prop] = workflowData[prop];
+    }
+  });
+
+  // Ensure required defaults
+  if (!cleaned.settings) {
+    cleaned.settings = {};
+  }
+
+  // Validate connections if provided
+  if (cleaned.connections) {
+    cleaned.connections = validateAndFixConnections(cleaned.connections, cleaned.nodes);
+  }
+
+  return cleaned;
+}
+
+// Enhanced connection validation with node existence checking
+function validateAndFixConnections(connections, nodes) {
+  if (!connections || typeof connections !== 'object') {
+    return {};
+  }
+
+  const nodeNames = new Set(nodes.map(n => n.name));
+  const nodeIds = new Set(nodes.map(n => n.id));
+  const validConnections = {};
+
+  Object.keys(connections).forEach(sourceKey => {
+    // Check if source exists (by name or ID)
+    if (!nodeNames.has(sourceKey) && !nodeIds.has(sourceKey)) {
+      console.warn(`Connection source '${sourceKey}' not found in nodes`);
+      return;
+    }
+
+    const sourceConnections = connections[sourceKey];
+    if (!sourceConnections || typeof sourceConnections !== 'object') {
+      return;
+    }
+
+    const validSourceConnections = {};
+
+    Object.keys(sourceConnections).forEach(outputType => {
+      const outputConnections = sourceConnections[outputType];
+      if (!Array.isArray(outputConnections)) return;
+
+      const validOutputConnections = outputConnections.map(connGroup => {
+        if (!Array.isArray(connGroup)) return [];
+
+        return connGroup.filter(conn => {
+          if (!conn || typeof conn !== 'object' || !conn.node) {
+            return false;
+          }
+
+          // Check if target exists (by name or ID)
+          if (!nodeNames.has(conn.node) && !nodeIds.has(conn.node)) {
+            console.warn(`Connection target '${conn.node}' not found`);
+            return false;
+          }
+
+          return true;
+        }).map(conn => ({
+          node: conn.node,
+          type: conn.type || 'main',
+          index: typeof conn.index === 'number' ? conn.index : 0
+        }));
+      }).filter(group => group.length > 0);
+
+      if (validOutputConnections.length > 0) {
+        validSourceConnections[outputType] = validOutputConnections;
+      }
+    });
+
+    if (Object.keys(validSourceConnections).length > 0) {
+      validConnections[sourceKey] = validSourceConnections;
+    }
+  });
+
+  return validConnections;
+}
+
+// Node parameter validation system with type-specific rules
+function validateNodeParameters(node) {
+  const validationRules = {
+    'n8n-nodes-base.webhook': {
+      required: ['httpMethod'],
+      defaults: {
+        httpMethod: 'GET',
+        responseMode: 'onReceived',
+        path: 'webhook'
+      }
+    },
+    'n8n-nodes-base.emailSend': {
+      required: ['toEmail', 'subject'],
+      defaults: {
+        fromEmail: 'noreply@localhost',
+        subject: 'Notification'
+      }
+    },
+    'n8n-nodes-base.cron': {
+      required: ['rule'],
+      defaults: {
+        rule: { hour: 0, minute: 0 }
+      }
+    },
+    'n8n-nodes-base.httpRequest': {
+      required: ['url'],
+      defaults: {
+        method: 'GET',
+        url: 'https://httpbin.org/get'
+      }
+    },
+    'n8n-nodes-base.set': {
+      defaults: {
+        values: {
+          string: [{ name: 'data', value: 'Hello World' }]
+        }
+      }
+    },
+    'n8n-nodes-base.function': {
+      defaults: {
+        functionCode: 'return $input.all();'
+      }
+    },
+    'n8n-nodes-base.if': {
+      defaults: {
+        conditions: {
+          boolean: [],
+          number: [],
+          string: [
+            {
+              value1: '={{$json["myField"]}}',
+              operation: 'equal',
+              value2: 'expectedValue'
+            }
+          ]
+        }
+      }
+    },
+    'n8n-nodes-base.switch': {
+      defaults: {
+        rules: {
+          rules: [
+            {
+              operation: 'equal',
+              value1: '={{$json["status"]}}',
+              value2: 'active'
+            }
+          ]
+        }
+      }
+    }
+  };
+
+  const rules = validationRules[node.type];
+  if (!rules) {
+    // Return node as-is if no specific rules
+    return node;
+  }
+
+  // Apply defaults first
+  if (rules.defaults) {
+    node.parameters = { ...rules.defaults, ...node.parameters };
+  }
+
+  // Validate required fields
+  if (rules.required) {
+    const missing = rules.required.filter(field =>
+      !node.parameters || node.parameters[field] === undefined || node.parameters[field] === null
+    );
+
+    if (missing.length > 0) {
+      console.warn(`Node '${node.name}' missing required parameters: ${missing.join(', ')}`);
+      // Apply defaults for missing required fields if available
+      missing.forEach(field => {
+        if (rules.defaults && rules.defaults[field] !== undefined) {
+          node.parameters[field] = rules.defaults[field];
+        }
+      });
+    }
+  }
+
+  return node;
+}
+
+// Comprehensive error handling with progressive retry strategy
+async function createWorkflowWithRetry(workflowData, maxAttempts = 5) {
+  // Progressive payload strategies - each attempt adds more structure
+  const attempts = [
+    // Attempt 1: Minimal structure (exactly what user provided)
+    () => workflowData,
+
+    // Attempt 2: Add basic settings
+    () => ({
+      ...workflowData,
+      settings: {}
+    }),
+
+    // Attempt 3: Add execution settings
+    () => ({
+      ...workflowData,
+      settings: {
+        saveDataErrorExecution: 'all',
+        saveDataSuccessExecution: 'all',
+        saveExecutionManually: false
+      }
+    }),
+
+    // Attempt 4: Add static data and pin data
+    () => ({
+      ...workflowData,
+      settings: {
+        saveDataErrorExecution: 'all',
+        saveDataSuccessExecution: 'all',
+        saveExecutionManually: false
+      },
+      staticData: null,
+      pinData: {}
+    }),
+
+    // Attempt 5: Complete structure with all optional fields
+    () => ({
+      ...workflowData,
+      settings: {
+        saveDataErrorExecution: 'all',
+        saveDataSuccessExecution: 'all',
+        saveExecutionManually: false,
+        saveExecutionProgress: false
+      },
+      staticData: null,
+      pinData: {},
+      meta: {},
+      active: false
+    })
+  ];
+
+  let lastError = null;
+
+  for (let i = 0; i < Math.min(attempts.length, maxAttempts); i++) {
+    try {
+      const attemptData = attempts[i]();
+      console.log(`Workflow creation attempt ${i + 1}/${maxAttempts}`);
+
+      const result = await makeApiRequest('/workflows', 'POST', attemptData);
+      console.log(`✅ Workflow created successfully on attempt ${i + 1}`);
+
+      return result;
+    } catch (error) {
+      lastError = error;
+      const errorMsg = error.response?.data?.message || error.message;
+      console.log(`❌ Attempt ${i + 1} failed: ${errorMsg}`);
+
+      // Handle specific errors and modify data for next attempt
+      if (error.response?.status === 400) {
+        if (errorMsg.includes('already exists') || errorMsg.includes('duplicate')) {
+          // Handle name conflicts by adding timestamp
+          workflowData.name = `${workflowData.name}_${Date.now()}`;
+          console.log(`🔄 Renamed workflow to: ${workflowData.name}`);
+        } else if (errorMsg.includes('additional properties')) {
+          // Log which properties might be causing issues
+          console.log(`🔍 API rejected additional properties. Trying simpler structure...`);
+        } else if (errorMsg.includes('required') || errorMsg.includes('missing')) {
+          // Log missing required fields
+          console.log(`🔍 Missing required fields detected: ${errorMsg}`);
+        }
+      } else if (error.response?.status === 401) {
+        // Authentication error - no point in retrying
+        throw new Error(`Authentication failed: ${errorMsg}. Please check your n8n API key.`);
+      } else if (error.response?.status === 403) {
+        // Permission error - no point in retrying
+        throw new Error(`Permission denied: ${errorMsg}. Check your user permissions.`);
+      } else if (error.response?.status >= 500) {
+        // Server error - might be temporary, continue retrying
+        console.log(`🔄 Server error (${error.response.status}), retrying...`);
+      }
+
+      // If this is not the last attempt, wait a bit before retrying
+      if (i < Math.min(attempts.length, maxAttempts) - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Progressive delay
+      }
+    }
+  }
+
+  // All attempts failed, throw the last error with comprehensive info
+  const errorMsg = lastError?.response?.data?.message || lastError?.message || 'Unknown error';
+  throw new Error(
+    `Failed to create workflow after ${maxAttempts} attempts. Last error: ${errorMsg}. ` +
+    `Please check:\n` +
+    `1. n8n server is running at ${N8N_API_URL}\n` +
+    `2. API key is valid\n` +
+    `3. Workflow structure is correct\n` +
+    `4. Node types are supported by your n8n version`
+  );
+}
+
 // Fonction pour générer automatiquement les connexions entre nodes
 function generateSmartConnections(nodes) {
   const connections = {};
@@ -737,8 +1112,8 @@ function getWorkflowSchemas() {
         name: {
           type: 'string',
           minLength: 1,
-          maxLength: 255,
-          pattern: '^[a-zA-Z0-9\\s\\-_]+$'
+          maxLength: 255
+          // Removed restrictive pattern to allow any valid workflow name
         },
         nodes: {
           type: 'array',
@@ -747,14 +1122,51 @@ function getWorkflowSchemas() {
             type: 'object',
             required: ['name', 'type'],
             properties: {
+              id: { type: 'string' },
               name: { type: 'string', minLength: 1 },
               type: { type: 'string', minLength: 1 },
+              typeVersion: { type: 'number', minimum: 1 },
               parameters: { type: 'object' },
               position: {
                 type: 'array',
                 items: { type: 'number' },
                 minItems: 2,
                 maxItems: 2
+              },
+              credentials: { type: 'object' },
+              disabled: { type: 'boolean' },
+              notes: { type: 'string' },
+              webhookId: { type: 'string' },
+              retryOnFail: { type: 'boolean' },
+              maxTries: { type: 'number', minimum: 1 },
+              waitBetweenTries: { type: 'number', minimum: 0 },
+              alwaysOutputData: { type: 'boolean' },
+              executeOnce: { type: 'boolean' },
+              continueOnFail: { type: 'boolean' },
+              onError: { type: 'string', enum: ['stopWorkflow', 'continueRegularOutput', 'continueErrorOutput'] },
+              color: { type: 'string' },
+              notesInFlow: { type: 'boolean' }
+            },
+            additionalProperties: true // Allow additional n8n node properties
+          }
+        },
+        connections: {
+          type: 'object',
+          additionalProperties: {
+            type: 'object',
+            additionalProperties: {
+              type: 'array',
+              items: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    node: { type: 'string' },
+                    type: { type: 'string' },
+                    index: { type: 'number' }
+                  },
+                  required: ['node', 'type', 'index']
+                }
               }
             }
           }
@@ -763,11 +1175,19 @@ function getWorkflowSchemas() {
           type: 'array',
           items: { type: 'string' }
         },
-        settings: { type: 'object' },
+        settings: {
+          type: 'object',
+          additionalProperties: true // Allow any n8n settings
+        },
+        staticData: {},
+        pinData: { type: 'object' },
+        meta: { type: 'object' },
+        versionId: { type: 'string' },
+        active: { type: 'boolean' },
         autoConnect: { type: 'boolean' },
         advancedConnections: { type: 'boolean' }
       },
-      additionalProperties: false
+      additionalProperties: true // Allow additional n8n workflow properties
     }
   };
 }
@@ -4097,9 +4517,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
       case "create_workflow":
-        const requestId = uuidv4();
-        const boundary = createErrorBoundary(requestId, { tool: 'create_workflow', name, nodeCount: nodes?.length });
-
         try {
           const {
             token,
@@ -4111,6 +4528,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             advancedConnections = true,
             connectionConfig = {}
           } = request.params.arguments;
+
+          const requestId = uuidv4();
+          const boundary = createErrorBoundary(requestId, { tool: 'create_workflow', name, nodeCount: nodes?.length });
 
           // Rate limiting
           const rateLimitKey = token ? verifyJWT(token).userId : 'anonymous';
@@ -4166,10 +4586,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
 
           // Structure ultra-minimaliste avec intelligence automatique
-          const workflowData = {
+          // Clean and prepare workflow data for n8n API
+          const cleanWorkflowData = {
             name: name,
             nodes: processedNodes.map(node => ({
-              id: node.id,
+              id: node.id || node.name,
               name: node.name,
               type: node.type,
               typeVersion: node.typeVersion || 1,
@@ -4179,48 +4600,57 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             connections: smartConnections
           };
 
-          // Validation basique obligatoire
-          if (!name || !nodes || nodes.length === 0) {
+          // Apply node parameter validation to ensure all nodes have proper parameters
+          processedNodes = processedNodes.map(validateNodeParameters);
+
+          // Clean the workflow data to remove any properties that n8n API doesn't accept
+          let workflowData;
+          try {
+            workflowData = sanitizeWorkflowForAPI({
+              name: name,
+              nodes: processedNodes,
+              connections: smartConnections
+            });
+          } catch (sanitizeError) {
+            addToBoundary(boundary.id, 'error', 'Workflow validation failed', { error: sanitizeError.message });
+            finalizeBoundary(boundary.id, false);
             return {
-              content: [
-                {
-                  type: "text",
-                  text: `Validation failed: Missing required fields (name, nodes)`,
-                },
-              ],
-              isError: true,
+              content: [{
+                type: "text",
+                text: `**Workflow Validation Failed**\n\n${sanitizeError.message}\n\n**Please check:**\n• All nodes have required names and types\n• Node parameters are properly formatted\n• Workflow structure is valid`
+              }],
+              isError: true
             };
           }
 
-          // Tentative 1: Structure minimaliste (comme trouvé dans les repos)
+          // Use comprehensive error handling with progressive retry strategy
           let result;
           try {
-            result = await makeApiRequest('/workflows', 'POST', workflowData);
-          } catch (firstError) {
-            // Tentative 2: Ajouter settings si requis
-            if (firstError.response?.status === 400 && firstError.response?.data?.message?.includes('settings')) {
-              try {
-                workflowData.settings = {};
-                result = await makeApiRequest('/workflows', 'POST', workflowData);
-              } catch (secondError) {
-                // Tentative 3: Structure complète avec tous les champs optionnels
-                try {
-                  const fullWorkflowData = {
-                    name: name,
-                    nodes: workflowData.nodes,
-                    connections: connections,
-                    settings: {},
-                    staticData: null,
-                    pinData: null
-                  };
-                  result = await makeApiRequest('/workflows', 'POST', fullWorkflowData);
-                } catch (thirdError) {
-                  throw thirdError; // Si même la structure complète échoue
-                }
-              }
-            } else {
-              throw firstError;
+            result = await createWorkflowWithRetry(workflowData, 5);
+            addToBoundary(boundary.id, 'success', 'Workflow created successfully', { workflowId: result.id });
+          } catch (creationError) {
+            addToBoundary(boundary.id, 'error', 'All workflow creation attempts failed', { error: creationError.message });
+            finalizeBoundary(boundary.id, false);
+
+            if (userContext) {
+              logAuditEvent('WORKFLOW_CREATE_FAILED', userContext.userId, userContext.tenantId, {
+                workflowName: name,
+                error: creationError.message,
+                nodeCount: processedNodes.length
+              });
             }
+
+            return {
+              content: [{
+                type: "text",
+                text: `**Workflow Creation Failed**\n\n${creationError.message}\n\n**Debug Information:**\n` +
+                      `• Workflow Name: ${name}\n` +
+                      `• Node Count: ${processedNodes.length}\n` +
+                      `• Connection Count: ${Object.keys(smartConnections).length}\n` +
+                      `• n8n Server: ${N8N_API_URL}`
+              }],
+              isError: true
+            };
           }
 
           // Activation si demandée
