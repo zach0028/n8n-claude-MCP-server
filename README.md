@@ -2,8 +2,12 @@
 
 **Serveur MCP Professionnel pour l'Intégration Complète n8n avec Claude Desktop**
 
-> ✨ **VERSION 2.0 - MANIPULATION ULTRA FINE DES NŒUDS** ✨
-> 
+> ✨ **VERSION 2.0 - SYSTÈME DE FALLBACK UNIVERSEL** ✨
+>
+> **🎉 NOUVEAU : Support de 100% des nœuds n8n !**
+>
+> Grâce au système de fallback dynamique, Claude peut maintenant manipuler **TOUS les nœuds n8n disponibles** (400+), pas seulement les 26 documentés localement.
+>
 > Solution complète d'automatisation de workflows - Créez, analysez, modifiez et gérez des workflows n8n avec des outils de niveau entreprise et une manipulation granulaire de chaque nœud.
 
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
@@ -27,28 +31,39 @@ Ce serveur MCP offre à Claude Desktop des capacités **ultra-avancées** de ges
 
 ## ⚡ Nouveautés Version 2.0
 
+### 🚀 Système de Fallback Universel (NOUVEAU !)
+- ✅ **Support de 100% des nœuds n8n** (400+)
+- ✅ **Découverte dynamique** depuis l'API n8n
+- ✅ **Cache intelligent** pour performances optimales
+- ✅ **Zéro limite** pour l'utilisateur
+- ✅ **Support automatique** des nouveaux nœuds
+
 ### 🎯 Manipulation Fine des Nœuds
-- ✅ **20+ nouveaux outils MCP** pour manipulation granulaire
-- ✅ **Documentation exhaustive** de tous les nœuds n8n
+- ✅ **22+ outils MCP** pour manipulation granulaire
+- ✅ **Documentation exhaustive** de 26 nœuds populaires
+- ✅ **Fallback automatique** pour les 400+ autres nœuds
 - ✅ **Guide complet des expressions** avec 100+ exemples
 - ✅ **Bibliothèque de snippets** de code réutilisables
 - ✅ **Validation automatique** des configurations
 - ✅ **Aide contextuelle** intelligente
 
 ### 📚 Documentation Intégrée
-- **`node-parameters-database.json`** - Base de données de 30+ nœuds
-- **`N8N_EXPRESSIONS_GUIDE.md`** - Guide complet des expressions
+- **`node-parameters-database.json`** - Base de données de 26 nœuds détaillés
+- **`N8N_EXPRESSIONS_GUIDE.md`** - Guide complet des expressions (100+ exemples)
 - **`node-code-snippets.json`** - 30+ templates de code
-- **`advanced-node-manipulation-tools.js`** - 7 fonctions avancées
+- **`advanced-node-manipulation-tools.cjs`** - 7 fonctions avancées + fallback universel
+- **`FALLBACK_UNIVERSEL.md`** - Documentation complète du système de fallback
 
 ### 🔥 Capacités Claude
 Claude peut maintenant :
-- 🔍 Consulter **tous les paramètres** d'un type de nœud
+- 🚀 **Manipuler 100% des nœuds n8n** (Slack, Gmail, OpenAI, Discord, etc.)
+- 🔍 Consulter **tous les paramètres** de n'importe quel nœud
 - 🎯 Modifier **un seul paramètre** sans recréer le workflow
 - ✨ Utiliser **toutes les expressions n8n** (`$json`, `$node`, `$now`, etc.)
 - 💻 Écrire du **code JavaScript** pour Function/Code nodes
 - 🔐 Configurer les **credentials** et l'authentification
 - 📖 Accéder à des **snippets pré-faits** pour cas courants
+- 🔄 **Découverte automatique** des nœuds non documentés
 
 ---
 
