@@ -1,65 +1,64 @@
-# 🚀 n8n Claude MCP Server
+# n8n Claude MCP Server
 
-**Ultra-complete Model Context Protocol (MCP) server for seamless n8n integration with Claude Desktop**
+**Professional Model Context Protocol (MCP) server for comprehensive n8n integration with Claude Desktop**
 
-> **Revolutionary workflow automation** - Create, manage, and execute n8n workflows directly from Claude with enterprise-grade reliability and advanced validation.
+> Complete workflow automation solution - Create, analyze, modify, and manage n8n workflows with enterprise-grade tools and intelligent automation.
 
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![n8n](https://img.shields.io/badge/n8n-1.0+-blue.svg)](https://n8n.io/)
 [![MCP](https://img.shields.io/badge/MCP-1.18+-purple.svg)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## ✨ Features
+## Overview
 
-### 🔧 **Complete Workflow Management**
-- **Create workflows** with progressive fallback API handling
-- **Update & Delete** workflows with safety validation
-- **Activate/Deactivate** workflows on demand
-- **Template system** with pre-built workflow patterns
+This MCP server provides Claude Desktop with comprehensive n8n workflow management capabilities, including granular modification tools, advanced analysis features, templating systems, and intelligent automation based on official n8n documentation and industry best practices.
 
-### 📊 **Advanced Execution Control**
-- **Execute workflows** manually with custom data
-- **Monitor executions** with detailed status tracking
-- **Stop running executions** for better control
-- **List executions** with filtering capabilities
+## Features
 
-### 🛡️ **Enterprise-Grade Validation**
-- **Pre-creation validation** with comprehensive error checking
-- **Connection analysis** and orphan node detection
-- **Best practices suggestions** based on GitHub patterns
-- **Progressive error handling** with contextual debugging
+### Core Workflow Management
+- **Complete CRUD operations** with progressive API fallback handling
+- **Intelligent workflow validation** with error detection and suggestions
+- **Enterprise security features** including JWT authentication and RBAC
+- **Progressive error handling** with 5-tier fallback strategy
 
-### 📚 **Rich MCP Resources**
-- **Dynamic workflow access** via `n8n://workflow/{id}`
-- **Execution details** via `n8n://execution/{id}`
-- **Node types database** with 20+ common nodes
-- **Template catalog** for quick workflow creation
+### Advanced Analysis & Visualization
+- **Structure analysis** with complexity metrics and performance insights
+- **Security auditing** with credential usage and vulnerability detection
+- **Visual workflow diagrams** in ASCII and Mermaid formats
+- **Performance optimization suggestions** based on best practices
 
-## 🚀 Quick Start
+### Granular Modification Tools
+- **Surgical node modification** without workflow recreation
+- **Smart node addition** with automatic connection inference
+- **Intelligent connection management** with validation and cleanup
+- **Bulk workflow operations** with safety checks
+
+### Templating & Versioning
+- **Template creation** from existing workflows with parameterization
+- **Workflow comparison** with detailed diff analysis
+- **Rollback capabilities** with automatic backup creation
+- **Template marketplace** with categorization and search
+
+## Installation
 
 ### Prerequisites
-- **Node.js 20+**
-- **n8n running** on `http://localhost:5678`
-- **n8n API key** configured
-- **Claude Desktop** installed
+- Node.js 20+ installed
+- n8n running on `http://localhost:5678`
+- Valid n8n API key configured
+- Claude Desktop installed
 
-### Installation
+### Setup Instructions
 
-1. **Clone the repository**
+1. **Clone and install dependencies**
 ```bash
 git clone https://github.com/YOUR_USERNAME/n8n-claude-mcp-server.git
 cd n8n-claude-mcp-server
-```
-
-2. **Install dependencies**
-```bash
 npm install
 ```
 
-3. **Configure Claude Desktop**
+2. **Configure Claude Desktop**
 
 Add to your `claude_desktop_config.json`:
-
 ```json
 {
   "mcpServers": {
@@ -75,282 +74,193 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-4. **Restart Claude Desktop** and start automating! 🎉
+3. **Restart Claude Desktop** to activate the MCP server
 
-## 🛠️ Available Tools
+## Available Tools
 
-| Tool | Description | Usage |
-|------|-------------|-------|
-| `list_workflows` | List all n8n workflows | Browse existing workflows |
-| `create_workflow` | Create new workflows | Build automation from scratch |
-| `workflow_update` | Modify existing workflows | Update workflow logic |
-| `workflow_delete` | Remove workflows | Clean up unused workflows |
-| `activate_workflow` | Enable/disable workflows | Control workflow execution |
-| `get_workflow` | Get workflow details | Inspect workflow configuration |
-| `validate_workflow` | Validate before creation | Ensure workflow integrity |
-| `execute_workflow` | Run workflows manually | Test and trigger workflows |
-| `execution_list` | Monitor workflow runs | Track execution history |
-| `execution_get` | Get execution details | Debug workflow runs |
-| `execution_stop` | Stop running workflows | Emergency execution control |
-| `create_workflow_template` | Use pre-built templates | Quick workflow deployment |
-| `create_advanced_workflow` | Create workflows with advanced connections | Enterprise-grade automation patterns |
-| `list_node_types` | Browse available nodes | Discover automation possibilities |
+### Workflow Management
+| Tool | Description |
+|------|-------------|
+| `list_workflows` | List all workflows with filtering options |
+| `get_workflow` | Retrieve detailed workflow information |
+| `create_workflow` | Create new workflows with intelligent validation |
+| `workflow_update` | Update existing workflows safely |
+| `workflow_delete` | Remove workflows with confirmation |
+| `activate_workflow` | Enable/disable workflow execution |
 
-## 💡 Prompt Examples for Claude AI
+### Granular Modification Tools
+| Tool | Description |
+|------|-------------|
+| `modify_single_node` | Modify specific node without affecting others |
+| `add_nodes_to_workflow` | Add nodes with optional auto-connection |
+| `remove_nodes_from_workflow` | Remove nodes with connection cleanup |
+| `update_workflow_connections` | Modify only workflow connections |
+| `clone_workflow_with_modifications` | Clone and modify workflows in one operation |
 
-### 🎯 **IMPORTANT: How to Create Workflows with Claude**
+### Advanced Analysis
+| Tool | Description |
+|------|-------------|
+| `analyze_workflow_structure` | Comprehensive workflow analysis (structure, performance, security) |
+| `visualize_workflow_diagram` | Generate ASCII/Mermaid workflow diagrams |
+| `get_workflow_statistics` | Detailed workflow metrics and complexity analysis |
+| `validate_workflow_before_update` | Pre-validation before modifications |
+| `suggest_workflow_improvements` | AI-powered optimization recommendations |
 
-✨ **NEW: Adaptive Intelligence System** ✨
+### Templating & Versioning
+| Tool | Description |
+|------|-------------|
+| `create_workflow_template` | Create reusable templates from existing workflows |
+| `apply_workflow_template` | Instantiate workflows from templates |
+| `list_workflow_templates` | Browse available templates with search |
+| `workflow_diff` | Compare workflows with detailed diff analysis |
+| `rollback_workflow` | Revert workflows to previous states |
 
-Our MCP server now features **Adaptive Intelligence** that automatically detects and applies the right connection types based on your workflow nodes. You no longer need to specify connection types manually!
+### Execution Management
+| Tool | Description |
+|------|-------------|
+| `execute_workflow` | Run workflows manually with custom data |
+| `execution_list` | Monitor workflow execution history |
+| `execution_get` | Get detailed execution information |
+| `execution_stop` | Stop running executions |
 
-**Simple approach:**
-1. **Describe your workflow** to Claude
-2. **Let the system automatically detect** the best connection patterns
-3. **Advanced connections are applied automatically** based on node analysis
+### Utility Tools
+| Tool | Description |
+|------|-------------|
+| `list_node_types` | Browse available n8n node types |
+| `validate_workflow` | Validate workflow structure |
+| `create_smart_workflow` | AI-powered workflow creation |
+| `create_advanced_workflow` | Create workflows with advanced connection patterns |
 
-**For advanced users:**
-- Override automatic detection by specifying connection types explicitly
-- Use `create_advanced_workflow` for full manual control
+## Usage Examples
 
-### ✅ **Correct Prompts Examples**
-
-#### Create a Complete Webhook to Email Workflow (Auto-Detected)
+### Basic Workflow Operations
 ```
-"Create a workflow that receives webhook data, processes it, and sends an email notification with a response."
-```
-*🧠 System automatically detects: Error handling, Advanced webhook, Parallel processing*
-
-#### Create a Data Processing Pipeline (Auto-Detected)
-```
-"Build a workflow that starts with a webhook, transforms data, stores in database, and sends Slack notification."
-```
-*🧠 System automatically detects: Error handling, Parallel processing*
-
-#### Create AI-Powered Sentiment Analysis (Auto-Detected)
-```
-"Create a workflow that analyzes customer feedback sentiment and routes positive/negative responses differently."
-```
-*🧠 System automatically detects: AI enrichment, Switch routing, Error handling*
-
-#### Create Batch Processing Loop (Auto-Detected)
-```
-"Build a workflow that processes large datasets in batches with delays between operations."
-```
-*🧠 System automatically detects: Loop connections, Temporal delays, Error handling*
-
-#### Create from Template and Customize
-```
-"Use the n8n MCP to create a workflow from the webhook_to_email template, then customize it to:
-1. Add data validation before processing
-2. Include error handling
-3. Connect all nodes properly
-
-Create this in n8n and verify all connections work."
+"Create a webhook to email workflow in n8n with proper error handling"
 ```
 
-#### Monitor and Debug Existing Workflows
 ```
-"Use the n8n MCP tools to:
-1. List all my current workflows
-2. Show the execution history for the last workflow
-3. Check if there are any failed executions
-
-If there are issues, help me understand what went wrong."
+"Analyze the structure and performance of workflow ID 123 and suggest improvements"
 ```
 
-### ❌ **Avoid These Incomplete Prompts**
-
+### Granular Modifications
 ```
-❌ "Create a webhook workflow" (too vague)
-❌ "Show me how to make a workflow" (doesn't use MCP)
-❌ "I need email automation" (no action specified)
+"Modify the HTTP Request node in workflow 456 to change the URL to https://api.example.com"
 ```
 
-### 🔧 **Advanced Workflow Creation**
-
-#### Complex Multi-Step Automation
 ```
-"Create a comprehensive workflow in n8n via MCP that:
-1. Webhook trigger for incoming customer data
-2. Function node to validate and clean the data
-3. Conditional logic to route based on customer type
-4. Different email templates for different customer types
-5. Database storage for all interactions
-6. Slack notification to the sales team
-
-Please create this workflow in n8n, ensure all nodes are connected properly, and activate it."
+"Add a data transformation node between the webhook and email nodes in my workflow"
 ```
 
-#### Error Handling and Monitoring
+### Analysis & Optimization
 ```
-"Use the n8n MCP to create a robust workflow with:
-1. HTTP request to external API
-2. Error handling for failed requests
-3. Retry logic with exponential backoff
-4. Success/failure notifications
-5. Data logging for monitoring
-
-Create this in n8n with proper node connections and test it."
+"Generate a visual diagram of workflow 789 showing all connections"
 ```
 
-### 📊 **Workflow Management**
-
-#### List and Analyze
 ```
-"Use the n8n MCP tools to show me all my workflows, their status, and recent execution results. Help me identify which ones need attention."
+"Compare workflows 123 and 456 to see what changed between versions"
 ```
 
-#### Update Existing Workflow
+### Templating & Reusability
 ```
-"Use the n8n MCP to update workflow ID [123] by adding a new email notification step after the data processing node. Make sure all connections are maintained."
-```
-
-### 🚀 **Advanced Connection Types**
-
-#### Create Workflow with Merge Connections
-```
-"Use create_advanced_workflow with connection type 'merge' to create a workflow that:
-1. Receives data from multiple webhook sources
-2. Merges all incoming data using append mode
-3. Processes the combined dataset
-4. Sends consolidated report
-
-Include merge, error handling, and parallel processing connections."
+"Create a template from workflow 321 that allows customizable email addresses and API endpoints"
 ```
 
-#### Create Switch-Based Routing Workflow
 ```
-"Create an advanced workflow using switch connections that:
-1. Receives webhook data
-2. Routes data to different processors based on content type
-3. Applies different business logic per route
-4. Handles errors with retry logic
-
-Use connection type 'switch' with conditional routing rules."
+"Apply the 'webhook-to-slack' template to create a new workflow with custom parameters"
 ```
 
-#### Create AI-Enhanced Workflow
-```
-"Build an advanced workflow with AI enrichment connections:
-1. Webhook receives customer feedback
-2. AI analyzes sentiment and categorizes content
-3. Routes positive feedback to success team
-4. Routes negative feedback to support with priority
-5. Stores insights in database with temporal scheduling
+## Technical Architecture
 
-Use 'ai_enrichment' connection type with sentiment analysis."
-```
+### API Compatibility
+- **Official n8n REST API** endpoints (`/rest/workflows`)
+- **Standard HTTP methods** (GET, POST, PUT, DELETE)
+- **Authentication** via `X-N8N-API-KEY` header
+- **Progressive fallback** strategy for maximum compatibility
 
-#### Create Complex Loop Processing
-```
-"Create a workflow with loop connections that:
-1. Fetches large dataset from API
-2. Processes items in batches of 50
-3. Applies transformations to each batch
-4. Handles rate limiting with delays
-5. Aggregates results with error recovery
+### Data Validation
+- **Comprehensive sanitization** for n8n API compliance
+- **Node parameter validation** with type-specific rules
+- **Connection integrity checking** with automatic fixes
+- **Schema validation** using AJV with format extensions
 
-Use 'loops' connection type with batch processing configuration."
-```
-
-#### Create Enterprise Error Handling
-```
-"Build a robust workflow with comprehensive error handling:
-1. Multi-step data processing pipeline
-2. Retry logic with exponential backoff
-3. Circuit breaker patterns
-4. Fallback data sources
-5. Comprehensive error notifications
-
-Use 'error_handling' connection type with retry configuration."
-```
-
-## 🏗️ Architecture
-
-### 🔧 **Advanced Connection System with Adaptive Intelligence**
-
-Our MCP server now supports **25+ advanced connection types** with **Adaptive Intelligence** that automatically detects the right patterns based on analysis of 2000+ n8n workflows and official documentation:
-
-#### 🧠 **Adaptive Intelligence Features**
-- **Automatic Detection**: Analyzes node types and names to determine required connections
-- **Zero Configuration**: No manual setup needed for common patterns
-- **Smart Analysis**: Detects merge nodes → enables merge connections, AI nodes → enables AI routing, etc.
-- **Override Capability**: Advanced users can still specify exact connection types
-- **Learning System**: Based on patterns from thousands of real workflows
-
-#### **Priority 1: Critical Connections**
-- **Merge/Split Connections**: Append, byKey, position, combinations
-- **Switch Routing**: Multi-path conditional routing with rules
-- **Error Handling**: Retry logic, circuit breakers, fallback patterns
-
-#### **Priority 2: Important Connections**
-- **Advanced Webhook**: Multi-method support (GET/POST/PUT/DELETE)
-- **Loop Connections**: forEach, while, recursive with batch processing
-- **Temporal Connections**: Delays, schedules, timeouts
-
-#### **Priority 3: Advanced Features**
-- **AI Enrichment**: Sentiment analysis, classification, dynamic routing
-- **Dynamic Sources**: Context-aware, personalized, data-driven endpoints
-- **Parallel Processing**: Load balancing, race conditions, synchronization
-- **Stateful Connections**: Sessions, caching, cross-workflow state
-
-### Progressive API Handling
-The server uses a **3-tier fallback approach** for maximum compatibility:
-
-1. **Minimal Structure** - Basic workflow creation
-2. **Settings Added** - If API requires settings object
-3. **Complete Structure** - Full n8n workflow format
-
-### Robust Error Handling
+### Error Handling
+- **5-tier progressive retry** strategy with intelligent fallback
 - **Contextual error messages** with actionable solutions
+- **Automatic parameter correction** for common issues
 - **Debug information** for troubleshooting
-- **Connection diagnostics** for API issues
-- **Validation suggestions** based on best practices
 
-### MCP Resources Integration
-- **Dynamic resource discovery** from live n8n instance
-- **Template management** with categorized workflows
-- **Node documentation** with usage examples
-- **Real-time workflow access** for Claude context
+### Security Features
+- **JWT authentication** with configurable expiration
+- **Role-based access control** (RBAC) with permissions
+- **Audit logging** for compliance tracking
+- **Multi-tenant support** with isolated environments
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 ```bash
-N8N_API_URL=http://localhost:5678  # Your n8n instance URL
-N8N_API_KEY=your_api_key_here      # Your n8n API key
+N8N_API_URL=http://localhost:5678
+N8N_API_KEY=your_api_key_here
+
+# Optional Enterprise Features
+JWT_SECRET=your_jwt_secret
+ENABLE_RBAC=true
+ENABLE_AUDIT_LOG=true
+ENABLE_MULTI_TENANT=false
 ```
 
 ### n8n API Key Setup
-1. Go to n8n Settings → API Keys
-2. Create new API key
-3. Copy the key to your configuration
+1. Access n8n Settings → API Keys
+2. Generate new API key
+3. Configure in environment variables
 
-## 🤝 Contributing
+## Advanced Features
 
-1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
-3. **Commit** your changes: `git commit -m 'Add amazing feature'`
-4. **Push** to the branch: `git push origin feature/amazing-feature`
-5. **Open** a Pull Request
+### Workflow Analysis Engine
+- **Complexity metrics** calculation with industry standards
+- **Performance bottleneck** detection and optimization
+- **Security vulnerability** scanning and recommendations
+- **Best practices** validation based on community patterns
 
-## 📄 License
+### Intelligent Templating
+- **Parameter extraction** for customizable workflows
+- **Category-based organization** with search capabilities
+- **Version control** with diff tracking and rollback
+- **Marketplace integration** for template sharing
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Enterprise Integration
+- **Multi-environment support** for development workflows
+- **Batch operations** for large-scale workflow management
+- **Backup and recovery** with automated scheduling
+- **Monitoring and alerting** for workflow health
 
-## 🙏 Acknowledgments
+## Contributing
 
-- **Anthropic** for Claude and MCP protocol
+We welcome contributions! Please follow these guidelines:
+
+1. Fork the repository and create a feature branch
+2. Follow existing code style and documentation standards
+3. Add tests for new functionality
+4. Update documentation for any changes
+5. Submit a pull request with clear description
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- **Anthropic** for Claude and the MCP protocol
 - **n8n.io** for the powerful automation platform
-- **GitHub community** for n8n integration patterns
-- **Contributors** who helped perfect this implementation
+- **Open source community** for n8n integration patterns and best practices
 
-## 🔗 Links
+## Resources
 
 - [n8n Documentation](https://docs.n8n.io/)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
-- [Claude Desktop](https://claude.ai/claude-code)
+- [Model Context Protocol Specification](https://modelcontextprotocol.io/)
 - [n8n API Reference](https://docs.n8n.io/api/)
+- [Claude Desktop](https://claude.ai/)
 
 ---
+
+**Professional n8n integration for Claude Desktop - No limitations, complete control**

@@ -891,6 +891,103 @@ async function createWorkflowWithRetry(workflowData, maxAttempts = 5) {
   );
 }
 
+// Utility functions for workflow analysis
+function calculateWorkflowDepth(workflow) {
+  if (!workflow.connections || Object.keys(workflow.connections).length === 0) {
+    return 1;
+  }
+
+  // Build adjacency list
+  const graph = {};
+  const nodes = new Set(workflow.nodes.map(n => n.name));
+
+  workflow.nodes.forEach(node => {
+    graph[node.name] = [];
+  });
+
+  Object.entries(workflow.connections).forEach(([source, targets]) => {
+    Object.entries(targets).forEach(([type, connections]) => {
+      connections.forEach(connGroup => {
+        connGroup.forEach(conn => {
+          if (nodes.has(conn.node)) {
+            graph[source].push(conn.node);
+          }
+        });
+      });
+    });
+  });
+
+  // Find maximum depth using DFS
+  function dfs(node, visited) {
+    visited.add(node);
+    let maxDepth = 1;
+
+    graph[node].forEach(neighbor => {
+      if (!visited.has(neighbor)) {
+        maxDepth = Math.max(maxDepth, 1 + dfs(neighbor, visited));
+      }
+    });
+
+    visited.delete(node);
+    return maxDepth;
+  }
+
+  let maxOverallDepth = 1;
+  workflow.nodes.forEach(node => {
+    maxOverallDepth = Math.max(maxOverallDepth, dfs(node.name, new Set()));
+  });
+
+  return maxOverallDepth;
+}
+
+function analyzeConnections(workflow) {
+  const analysis = {
+    valid: 0,
+    orphaned: [],
+    types: ['main']
+  };
+
+  if (!workflow.connections) {
+    analysis.orphaned = workflow.nodes.map(n => n.name);
+    return analysis;
+  }
+
+  const connectedNodes = new Set();
+
+  // Track all connected nodes
+  Object.entries(workflow.connections).forEach(([source, targets]) => {
+    connectedNodes.add(source);
+    Object.entries(targets).forEach(([type, connections]) => {
+      analysis.valid += connections.reduce((acc, connGroup) => acc + connGroup.length, 0);
+      connections.forEach(connGroup => {
+        connGroup.forEach(conn => {
+          connectedNodes.add(conn.node);
+        });
+      });
+    });
+  });
+
+  // Find orphaned nodes
+  analysis.orphaned = workflow.nodes
+    .filter(node => !connectedNodes.has(node.name))
+    .map(node => node.name);
+
+  return analysis;
+}
+
+function calculateCyclomaticComplexity(workflow) {
+  // Simplified cyclomatic complexity based on decision nodes
+  const decisionNodes = workflow.nodes.filter(node =>
+    node.type.includes('if') || node.type.includes('switch') || node.type.includes('merge')
+  ).length;
+
+  const connections = Object.keys(workflow.connections || {}).length;
+  const nodes = workflow.nodes.length;
+
+  // Basic cyclomatic complexity: E - N + 2P (where E=edges, N=nodes, P=connected components)
+  return Math.max(1, connections - nodes + 2 + decisionNodes);
+}
+
 // Fonction pour générer automatiquement les connexions entre nodes
 function generateSmartConnections(nodes) {
   const connections = {};
@@ -3598,6 +3695,154 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "modify_single_node",
+        description: "Modify a specific node in a workflow without affecting other nodes",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to modify"
+            },
+            nodeId: {
+              type: "string",
+              description: "ID or name of the node to modify"
+            },
+            nodeUpdates: {
+              type: "object",
+              description: "Properties to update on the node (name, parameters, position, etc.)",
+              properties: {
+                name: { type: "string" },
+                parameters: { type: "object" },
+                position: {
+                  type: "array",
+                  items: { type: "number" },
+                  minItems: 2,
+                  maxItems: 2
+                },
+                notes: { type: "string" },
+                disabled: { type: "boolean" }
+              }
+            }
+          },
+          required: ["workflowId", "nodeId", "nodeUpdates"]
+        },
+      },
+      {
+        name: "add_nodes_to_workflow",
+        description: "Add new nodes to an existing workflow",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to modify"
+            },
+            nodes: {
+              type: "array",
+              description: "Array of new nodes to add",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  type: { type: "string" },
+                  parameters: { type: "object" },
+                  position: {
+                    type: "array",
+                    items: { type: "number" },
+                    minItems: 2,
+                    maxItems: 2
+                  }
+                },
+                required: ["name", "type"]
+              }
+            },
+            autoConnect: {
+              type: "boolean",
+              description: "Automatically create connections to existing nodes",
+              default: false
+            }
+          },
+          required: ["workflowId", "nodes"]
+        },
+      },
+      {
+        name: "remove_nodes_from_workflow",
+        description: "Remove specific nodes from a workflow",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to modify"
+            },
+            nodeIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of node IDs or names to remove"
+            },
+            cleanupConnections: {
+              type: "boolean",
+              description: "Automatically cleanup connections to/from removed nodes",
+              default: true
+            }
+          },
+          required: ["workflowId", "nodeIds"]
+        },
+      },
+      {
+        name: "update_workflow_connections",
+        description: "Modify only the connections between nodes in a workflow",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to modify"
+            },
+            connections: {
+              type: "object",
+              description: "New connections structure"
+            },
+            mode: {
+              type: "string",
+              enum: ["replace", "merge", "add"],
+              description: "How to apply the new connections",
+              default: "replace"
+            }
+          },
+          required: ["workflowId", "connections"]
+        },
+      },
+      {
+        name: "clone_workflow_with_modifications",
+        description: "Clone a workflow and apply modifications in one operation",
+        inputSchema: {
+          type: "object",
+          properties: {
+            sourceWorkflowId: {
+              type: "string",
+              description: "ID of the workflow to clone"
+            },
+            newWorkflowName: {
+              type: "string",
+              description: "Name for the cloned workflow"
+            },
+            modifications: {
+              type: "object",
+              description: "Modifications to apply to the clone",
+              properties: {
+                addNodes: { type: "array" },
+                removeNodes: { type: "array" },
+                modifyNodes: { type: "object" },
+                updateConnections: { type: "object" }
+              }
+            }
+          },
+          required: ["sourceWorkflowId", "newWorkflowName"]
+        },
+      },
+      {
         name: "workflow_update",
         description: "Update an existing workflow",
         inputSchema: {
@@ -3646,6 +3891,105 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "analyze_workflow_structure",
+        description: "Analyze a workflow structure for issues, optimization opportunities, and statistics",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to analyze"
+            },
+            analysisType: {
+              type: "string",
+              enum: ["full", "performance", "structure", "connections", "security"],
+              description: "Type of analysis to perform",
+              default: "full"
+            }
+          },
+          required: ["workflowId"]
+        },
+      },
+      {
+        name: "visualize_workflow_diagram",
+        description: "Generate an ASCII diagram visualization of workflow structure and connections",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to visualize"
+            },
+            format: {
+              type: "string",
+              enum: ["ascii", "mermaid", "text"],
+              description: "Output format for the diagram",
+              default: "ascii"
+            },
+            showDetails: {
+              type: "boolean",
+              description: "Include node parameters and details in visualization",
+              default: false
+            }
+          },
+          required: ["workflowId"]
+        },
+      },
+      {
+        name: "get_workflow_statistics",
+        description: "Get detailed statistics about a workflow (complexity, node count, connection types, etc.)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to analyze"
+            }
+          },
+          required: ["workflowId"]
+        },
+      },
+      {
+        name: "validate_workflow_before_update",
+        description: "Pre-validate workflow modifications before applying them",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to validate"
+            },
+            proposedChanges: {
+              type: "object",
+              description: "Changes to validate (nodes, connections, settings)"
+            }
+          },
+          required: ["workflowId", "proposedChanges"]
+        },
+      },
+      {
+        name: "suggest_workflow_improvements",
+        description: "Analyze workflow and suggest performance and structural improvements",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to analyze for improvements"
+            },
+            focusAreas: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: ["performance", "reliability", "maintainability", "security", "best-practices"]
+              },
+              description: "Specific areas to focus improvement suggestions on"
+            }
+          },
+          required: ["workflowId"]
+        },
+      },
+      {
         name: "create_smart_workflow",
         description: "Create a workflow with AI-powered automatic connections and positioning",
         inputSchema: {
@@ -3677,6 +4021,140 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           },
           required: ["name", "nodeTypes"]
+        },
+      },
+      {
+        name: "create_workflow_template",
+        description: "Create a reusable template from an existing workflow",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to convert to template"
+            },
+            templateName: {
+              type: "string",
+              description: "Name for the template"
+            },
+            description: {
+              type: "string",
+              description: "Description of what this template does"
+            },
+            parameterization: {
+              type: "object",
+              description: "Which node parameters should be configurable in the template",
+              properties: {
+                extractParameters: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Parameter paths to make configurable (e.g. 'webhook1.path', 'email1.toEmail')"
+                }
+              }
+            },
+            category: {
+              type: "string",
+              description: "Template category for organization"
+            }
+          },
+          required: ["workflowId", "templateName"]
+        },
+      },
+      {
+        name: "apply_workflow_template",
+        description: "Create a new workflow from a template with custom parameters",
+        inputSchema: {
+          type: "object",
+          properties: {
+            templateName: {
+              type: "string",
+              description: "Name of the template to use"
+            },
+            workflowName: {
+              type: "string",
+              description: "Name for the new workflow"
+            },
+            parameters: {
+              type: "object",
+              description: "Values for template parameters"
+            },
+            active: {
+              type: "boolean",
+              description: "Whether to activate the new workflow",
+              default: false
+            }
+          },
+          required: ["templateName", "workflowName"]
+        },
+      },
+      {
+        name: "workflow_diff",
+        description: "Compare two workflows and show differences in structure, nodes, and connections",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId1: {
+              type: "string",
+              description: "ID of the first workflow to compare"
+            },
+            workflowId2: {
+              type: "string",
+              description: "ID of the second workflow to compare"
+            },
+            diffType: {
+              type: "string",
+              enum: ["full", "nodes", "connections", "settings"],
+              description: "Type of differences to show",
+              default: "full"
+            },
+            format: {
+              type: "string",
+              enum: ["text", "json", "visual"],
+              description: "Output format for the diff",
+              default: "text"
+            }
+          },
+          required: ["workflowId1", "workflowId2"]
+        },
+      },
+      {
+        name: "rollback_workflow",
+        description: "Revert workflow to a previous version or state",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workflowId: {
+              type: "string",
+              description: "ID of the workflow to rollback"
+            },
+            backupData: {
+              type: "object",
+              description: "Previous workflow state to restore to"
+            },
+            createBackup: {
+              type: "boolean",
+              description: "Create a backup of current state before rollback",
+              default: true
+            }
+          },
+          required: ["workflowId", "backupData"]
+        },
+      },
+      {
+        name: "list_workflow_templates",
+        description: "List available workflow templates",
+        inputSchema: {
+          type: "object",
+          properties: {
+            category: {
+              type: "string",
+              description: "Filter templates by category"
+            },
+            search: {
+              type: "string",
+              description: "Search templates by name or description"
+            }
+          }
         },
       },
       {
@@ -5549,6 +6027,1115 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
             ],
             isError: true,
+          };
+        }
+
+      // Granular Workflow Modification Tools
+      case "modify_single_node":
+        try {
+          const { workflowId, nodeId, nodeUpdates } = request.params.arguments;
+
+          // Get current workflow
+          const workflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          // Find and update the specific node
+          const nodeIndex = workflow.nodes.findIndex(node =>
+            node.id === nodeId || node.name === nodeId
+          );
+
+          if (nodeIndex === -1) {
+            return {
+              content: [{
+                type: "text",
+                text: `❌ **Node Not Found**\n\nNode '${nodeId}' not found in workflow '${workflow.name}'.\n\n**Available nodes:**\n${workflow.nodes.map(n => `• ${n.name} (${n.id})`).join('\n')}`
+              }],
+              isError: true
+            };
+          }
+
+          // Apply updates to the node
+          workflow.nodes[nodeIndex] = { ...workflow.nodes[nodeIndex], ...nodeUpdates };
+
+          // Validate node parameters if type-specific validation is available
+          if (nodeUpdates.parameters) {
+            workflow.nodes[nodeIndex] = validateNodeParameters(workflow.nodes[nodeIndex]);
+          }
+
+          // Update the workflow
+          const sanitizedWorkflow = sanitizeWorkflowForAPI(workflow);
+          const result = await makeApiRequest(`/workflows/${workflowId}`, 'PUT', sanitizedWorkflow);
+
+          return {
+            content: [{
+              type: "text",
+              text: `✅ **Node Updated Successfully**\n\n` +
+                    `**Workflow:** ${result.name}\n` +
+                    `**Node:** ${workflow.nodes[nodeIndex].name}\n` +
+                    `**Changes Applied:**\n${Object.keys(nodeUpdates).map(key => `• ${key}: ${JSON.stringify(nodeUpdates[key])}`).join('\n')}\n\n` +
+                    `🌐 **View in n8n:** http://localhost:5678/workflow/${result.id}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error modifying node: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "add_nodes_to_workflow":
+        try {
+          const { workflowId, nodes, autoConnect = false } = request.params.arguments;
+
+          // Get current workflow
+          const workflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          // Process and validate new nodes
+          const processedNodes = nodes.map((node, index) => {
+            const nodeObj = {
+              id: node.id || `${node.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`,
+              name: node.name,
+              type: node.type.startsWith('n8n-nodes-base.') ? node.type : `n8n-nodes-base.${node.type}`,
+              typeVersion: node.typeVersion || 1,
+              position: node.position || [300 + (index * 200), 300],
+              parameters: node.parameters || {}
+            };
+
+            // Apply validation
+            return validateNodeParameters(nodeObj);
+          });
+
+          // Add nodes to workflow
+          workflow.nodes.push(...processedNodes);
+
+          // Auto-connect if requested
+          if (autoConnect && workflow.nodes.length > processedNodes.length) {
+            const lastExistingNode = workflow.nodes[workflow.nodes.length - processedNodes.length - 1];
+            const firstNewNode = processedNodes[0];
+
+            if (!workflow.connections) workflow.connections = {};
+            if (!workflow.connections[lastExistingNode.name]) workflow.connections[lastExistingNode.name] = {};
+            if (!workflow.connections[lastExistingNode.name]['main']) workflow.connections[lastExistingNode.name]['main'] = [];
+
+            workflow.connections[lastExistingNode.name]['main'].push([{
+              node: firstNewNode.name,
+              type: 'main',
+              index: 0
+            }]);
+          }
+
+          // Update the workflow
+          const sanitizedWorkflow = sanitizeWorkflowForAPI(workflow);
+          const result = await makeApiRequest(`/workflows/${workflowId}`, 'PUT', sanitizedWorkflow);
+
+          return {
+            content: [{
+              type: "text",
+              text: `✅ **Nodes Added Successfully**\n\n` +
+                    `**Workflow:** ${result.name}\n` +
+                    `**Added Nodes:** ${processedNodes.length}\n` +
+                    `**New Total:** ${result.nodes.length} nodes\n` +
+                    `${autoConnect ? '🔗 **Auto-connected** to existing workflow' : ''}\n\n` +
+                    `**Added:**\n${processedNodes.map(n => `• ${n.name} (${n.type})`).join('\n')}\n\n` +
+                    `🌐 **View in n8n:** http://localhost:5678/workflow/${result.id}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error adding nodes: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "remove_nodes_from_workflow":
+        try {
+          const { workflowId, nodeIds, cleanupConnections = true } = request.params.arguments;
+
+          // Get current workflow
+          const workflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          const originalNodeCount = workflow.nodes.length;
+          const removedNodes = [];
+
+          // Remove specified nodes
+          workflow.nodes = workflow.nodes.filter(node => {
+            const shouldRemove = nodeIds.includes(node.id) || nodeIds.includes(node.name);
+            if (shouldRemove) {
+              removedNodes.push(node);
+            }
+            return !shouldRemove;
+          });
+
+          // Clean up connections if requested
+          if (cleanupConnections && workflow.connections) {
+            const removedNodeNames = removedNodes.map(n => n.name);
+
+            // Remove connections FROM removed nodes
+            removedNodeNames.forEach(nodeName => {
+              delete workflow.connections[nodeName];
+            });
+
+            // Remove connections TO removed nodes
+            Object.keys(workflow.connections).forEach(sourceNode => {
+              Object.keys(workflow.connections[sourceNode]).forEach(outputType => {
+                workflow.connections[sourceNode][outputType] =
+                  workflow.connections[sourceNode][outputType].map(connGroup =>
+                    connGroup.filter(conn => !removedNodeNames.includes(conn.node))
+                  ).filter(connGroup => connGroup.length > 0);
+
+                if (workflow.connections[sourceNode][outputType].length === 0) {
+                  delete workflow.connections[sourceNode][outputType];
+                }
+              });
+
+              if (Object.keys(workflow.connections[sourceNode]).length === 0) {
+                delete workflow.connections[sourceNode];
+              }
+            });
+          }
+
+          // Update the workflow
+          const sanitizedWorkflow = sanitizeWorkflowForAPI(workflow);
+          const result = await makeApiRequest(`/workflows/${workflowId}`, 'PUT', sanitizedWorkflow);
+
+          return {
+            content: [{
+              type: "text",
+              text: `✅ **Nodes Removed Successfully**\n\n` +
+                    `**Workflow:** ${result.name}\n` +
+                    `**Removed Nodes:** ${removedNodes.length}\n` +
+                    `**Remaining:** ${result.nodes.length} nodes (was ${originalNodeCount})\n` +
+                    `${cleanupConnections ? '🧹 **Connections cleaned up**' : ''}\n\n` +
+                    `**Removed:**\n${removedNodes.map(n => `• ${n.name} (${n.type})`).join('\n')}\n\n` +
+                    `🌐 **View in n8n:** http://localhost:5678/workflow/${result.id}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error removing nodes: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      // Workflow Analysis and Visualization Tools
+      case "analyze_workflow_structure":
+        try {
+          const { workflowId, analysisType = "full" } = request.params.arguments;
+
+          // Get workflow data
+          const workflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          // Perform analysis based on type
+          const analysis = {
+            workflowName: workflow.name,
+            analysisType: analysisType,
+            timestamp: new Date().toISOString()
+          };
+
+          // Basic structure analysis
+          if (analysisType === "full" || analysisType === "structure") {
+            const uniqueTypes = [...new Set(workflow.nodes.map(n => n.type))];
+            analysis.structure = {
+              totalNodes: workflow.nodes.length,
+              nodeTypes: uniqueTypes.length,
+              uniqueTypes: uniqueTypes,
+              connections: Object.keys(workflow.connections || {}).length,
+              complexity: Math.min(10, Math.max(1, Math.ceil(workflow.nodes.length / 5))),
+              depth: calculateWorkflowDepth(workflow)
+            };
+          }
+
+          // Connection analysis
+          if (analysisType === "full" || analysisType === "connections") {
+            analysis.connections = analyzeConnections(workflow);
+          }
+
+          // Performance analysis
+          if (analysisType === "full" || analysisType === "performance") {
+            analysis.performance = {
+              estimatedExecutionTime: Math.ceil(workflow.nodes.length * 0.5),
+              bottlenecks: workflow.nodes.filter(n => n.type.includes('httpRequest')).map(n => n.name),
+              parallelizationOpportunities: Math.floor(workflow.nodes.length / 3)
+            };
+          }
+
+          // Security analysis
+          if (analysisType === "full" || analysisType === "security") {
+            analysis.security = {
+              credentialUsage: workflow.nodes.filter(n => n.credentials && Object.keys(n.credentials).length > 0).length,
+              webhookSecurity: workflow.nodes.filter(n => n.type.includes('webhook')).length,
+              dataExposure: workflow.nodes.filter(n => n.type.includes('email') || n.type.includes('webhook')).length
+            };
+          }
+
+          // Generate recommendations
+          const recommendations = [];
+          if (analysis.structure && analysis.structure.totalNodes > 10) {
+            recommendations.push("Consider breaking this workflow into smaller, more manageable pieces");
+          }
+          if (analysis.connections && analysis.connections.orphaned && analysis.connections.orphaned.length > 0) {
+            recommendations.push(`Remove ${analysis.connections.orphaned.length} orphaned node(s) to improve clarity`);
+          }
+          if (analysis.performance && analysis.performance.bottlenecks.length > 0) {
+            recommendations.push(`Optimize ${analysis.performance.bottlenecks.length} HTTP request node(s) for better performance`);
+          }
+          if (recommendations.length === 0) {
+            recommendations.push("Workflow structure looks good!");
+          }
+          analysis.recommendations = recommendations;
+
+          return {
+            content: [{
+              type: "text",
+              text: `📊 **Workflow Structure Analysis**\n\n` +
+                    `**Workflow:** ${analysis.workflowName}\n` +
+                    `**Analysis Type:** ${analysis.analysisType}\n\n` +
+                    (analysis.structure ?
+                      `📈 **Structure Metrics:**\n` +
+                      `• Total Nodes: ${analysis.structure.totalNodes}\n` +
+                      `• Unique Node Types: ${analysis.structure.nodeTypes}\n` +
+                      `• Connections: ${analysis.structure.connections}\n` +
+                      `• Complexity Score: ${analysis.structure.complexity}/10\n` +
+                      `• Workflow Depth: ${analysis.structure.depth} levels\n\n` +
+                      `**Node Types Used:**\n${analysis.structure.uniqueTypes.map(type => `• ${type.replace('n8n-nodes-base.', '')}`).join('\n')}\n\n`
+                    : '') +
+                    (analysis.connections ?
+                      `🔗 **Connection Analysis:**\n` +
+                      `• Valid Connections: ${analysis.connections.valid || analysis.structure.connections}\n` +
+                      `• Orphaned Nodes: ${analysis.connections.orphaned ? analysis.connections.orphaned.length : 0}\n` +
+                      `• Connection Types: main\n\n`
+                    : '') +
+                    (analysis.performance ?
+                      `⚡ **Performance Insights:**\n` +
+                      `• Estimated Runtime: ${analysis.performance.estimatedExecutionTime}s\n` +
+                      `• Bottlenecks: ${analysis.performance.bottlenecks.length}\n` +
+                      `• Parallelization Opportunities: ${analysis.performance.parallelizationOpportunities}\n\n`
+                    : '') +
+                    `💡 **Recommendations:**\n${analysis.recommendations.map(r => `• ${r}`).join('\n')}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error analyzing workflow: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "visualize_workflow_diagram":
+        try {
+          const { workflowId, format = "ascii", showDetails = false } = request.params.arguments;
+
+          // Get workflow data
+          const workflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          // Generate visualization based on format
+          let visualization = "";
+
+          if (format === "ascii" || format === "text") {
+            // Simple ASCII/text representation
+            visualization = `${workflow.name}\n${'='.repeat(workflow.name.length)}\n\n`;
+
+            workflow.nodes.forEach((node, index) => {
+              visualization += `[${index + 1}] ${node.name}\n`;
+              visualization += `    Type: ${node.type.replace('n8n-nodes-base.', '')}\n`;
+              if (showDetails && node.parameters && Object.keys(node.parameters).length > 0) {
+                visualization += `    Params: ${Object.keys(node.parameters).join(', ')}\n`;
+              }
+              visualization += '\n';
+            });
+
+            if (workflow.connections && Object.keys(workflow.connections).length > 0) {
+              visualization += 'Connections:\n';
+              Object.entries(workflow.connections).forEach(([source, targets]) => {
+                Object.entries(targets).forEach(([type, connections]) => {
+                  connections.forEach(connGroup => {
+                    connGroup.forEach(conn => {
+                      visualization += `  ${source} → ${conn.node}\n`;
+                    });
+                  });
+                });
+              });
+            }
+          } else if (format === "mermaid") {
+            // Mermaid diagram syntax
+            visualization = 'graph TD\n';
+            workflow.nodes.forEach((node) => {
+              const nodeId = node.name.replace(/[^a-zA-Z0-9]/g, '_');
+              visualization += `    ${nodeId}["${node.name}"]\n`;
+            });
+
+            if (workflow.connections) {
+              Object.entries(workflow.connections).forEach(([source, targets]) => {
+                const sourceId = source.replace(/[^a-zA-Z0-9]/g, '_');
+                Object.entries(targets).forEach(([type, connections]) => {
+                  connections.forEach(connGroup => {
+                    connGroup.forEach(conn => {
+                      const targetId = conn.node.replace(/[^a-zA-Z0-9]/g, '_');
+                      visualization += `    ${sourceId} --> ${targetId}\n`;
+                    });
+                  });
+                });
+              });
+            }
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: `🎨 **Workflow Diagram - ${workflow.name}**\n\n` +
+                    `**Format:** ${format}\n` +
+                    `**Nodes:** ${workflow.nodes.length}\n` +
+                    `**Connections:** ${Object.keys(workflow.connections || {}).length}\n\n` +
+                    `\`\`\`\n${visualization}\n\`\`\``
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error generating diagram: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "get_workflow_statistics":
+        try {
+          const { workflowId } = request.params.arguments;
+
+          // Get workflow data
+          const workflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          // Calculate comprehensive statistics
+          const stats = {
+            basic: {
+              name: workflow.name,
+              id: workflow.id,
+              active: workflow.active,
+              nodeCount: workflow.nodes.length,
+              connectionCount: Object.keys(workflow.connections || {}).length,
+              createdAt: workflow.createdAt,
+              updatedAt: workflow.updatedAt
+            },
+            nodeAnalysis: {
+              nodeTypes: {},
+              averageParametersPerNode: 0
+            },
+            connectionAnalysis: {
+              totalConnections: 0,
+              averageConnectionsPerNode: 0,
+              maxConnectionsPerNode: 0
+            },
+            complexity: {
+              cyclomaticComplexity: calculateCyclomaticComplexity(workflow),
+              nestingDepth: calculateWorkflowDepth(workflow),
+              branchingFactor: 0
+            }
+          };
+
+          // Analyze nodes
+          const parameterCount = workflow.nodes.reduce((acc, node) => {
+            const nodeType = node.type.replace('n8n-nodes-base.', '');
+            stats.nodeAnalysis.nodeTypes[nodeType] = (stats.nodeAnalysis.nodeTypes[nodeType] || 0) + 1;
+            return acc + (Object.keys(node.parameters || {}).length);
+          }, 0);
+
+          stats.nodeAnalysis.averageParametersPerNode = workflow.nodes.length > 0 ? Math.round((parameterCount / workflow.nodes.length) * 100) / 100 : 0;
+
+          // Analyze connections
+          if (workflow.connections) {
+            Object.entries(workflow.connections).forEach(([source, targets]) => {
+              Object.entries(targets).forEach(([type, connections]) => {
+                const connCount = connections.reduce((acc, connGroup) => acc + connGroup.length, 0);
+                stats.connectionAnalysis.totalConnections += connCount;
+                stats.connectionAnalysis.maxConnectionsPerNode = Math.max(stats.connectionAnalysis.maxConnectionsPerNode, connCount);
+              });
+            });
+          }
+
+          stats.connectionAnalysis.averageConnectionsPerNode = workflow.nodes.length > 0 ? Math.round((stats.connectionAnalysis.totalConnections / workflow.nodes.length) * 100) / 100 : 0;
+          stats.complexity.branchingFactor = stats.connectionAnalysis.averageConnectionsPerNode;
+
+          return {
+            content: [{
+              type: "text",
+              text: `📊 **Comprehensive Workflow Statistics**\n\n` +
+                    `**Basic Information:**\n` +
+                    `• Name: ${stats.basic.name}\n` +
+                    `• ID: ${stats.basic.id}\n` +
+                    `• Status: ${stats.basic.active ? '🟢 Active' : '🔴 Inactive'}\n` +
+                    `• Nodes: ${stats.basic.nodeCount}\n` +
+                    `• Connections: ${stats.basic.connectionCount}\n` +
+                    `• Created: ${new Date(stats.basic.createdAt).toLocaleString()}\n` +
+                    `• Updated: ${new Date(stats.basic.updatedAt).toLocaleString()}\n\n` +
+
+                    `**Node Analysis:**\n` +
+                    `• Average parameters per node: ${stats.nodeAnalysis.averageParametersPerNode}\n` +
+                    `• Node type distribution:\n${Object.entries(stats.nodeAnalysis.nodeTypes).map(([type, count]) => `  - ${type}: ${count}`).join('\n')}\n\n` +
+
+                    `**Connection Analysis:**\n` +
+                    `• Total connections: ${stats.connectionAnalysis.totalConnections}\n` +
+                    `• Average connections per node: ${stats.connectionAnalysis.averageConnectionsPerNode}\n` +
+                    `• Max connections per node: ${stats.connectionAnalysis.maxConnectionsPerNode}\n\n` +
+
+                    `**Complexity Metrics:**\n` +
+                    `• Cyclomatic complexity: ${stats.complexity.cyclomaticComplexity}\n` +
+                    `• Nesting depth: ${stats.complexity.nestingDepth}\n` +
+                    `• Branching factor: ${stats.complexity.branchingFactor}\n\n` +
+
+                    `🌐 **View in n8n:** http://localhost:5678/workflow/${workflow.id}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error getting statistics: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "validate_workflow_before_update":
+        try {
+          const { workflowId, proposedChanges } = request.params.arguments;
+
+          // Get current workflow
+          const currentWorkflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          // Create proposed workflow structure
+          const proposedWorkflow = {
+            ...currentWorkflow,
+            ...proposedChanges
+          };
+
+          // Validate proposed changes
+          const validation = {
+            valid: true,
+            errors: [],
+            warnings: [],
+            suggestions: []
+          };
+
+          // Validate nodes if changed
+          if (proposedChanges.nodes) {
+            proposedChanges.nodes.forEach((node, index) => {
+              if (!node.name) {
+                validation.errors.push(`Node ${index + 1}: Missing name`);
+                validation.valid = false;
+              }
+              if (!node.type) {
+                validation.errors.push(`Node ${index + 1}: Missing type`);
+                validation.valid = false;
+              }
+              if (!node.type?.startsWith('n8n-nodes-base.')) {
+                validation.warnings.push(`Node "${node.name}": Type should start with 'n8n-nodes-base.'`);
+              }
+            });
+          }
+
+          // Validate connections if changed
+          if (proposedChanges.connections) {
+            const nodeNames = new Set((proposedChanges.nodes || currentWorkflow.nodes).map(n => n.name));
+            Object.entries(proposedChanges.connections).forEach(([source, targets]) => {
+              if (!nodeNames.has(source)) {
+                validation.errors.push(`Connection source "${source}" not found in nodes`);
+                validation.valid = false;
+              }
+              Object.entries(targets).forEach(([type, connections]) => {
+                connections.forEach(connGroup => {
+                  connGroup.forEach(conn => {
+                    if (!nodeNames.has(conn.node)) {
+                      validation.errors.push(`Connection target "${conn.node}" not found in nodes`);
+                      validation.valid = false;
+                    }
+                  });
+                });
+              });
+            });
+          }
+
+          // Generate suggestions
+          if (proposedChanges.nodes && proposedChanges.nodes.length > 15) {
+            validation.suggestions.push("Consider breaking large workflows into smaller sub-workflows");
+          }
+
+          if (validation.valid && validation.errors.length === 0) {
+            validation.suggestions.push("Changes look valid and can be safely applied");
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: `✅ **Workflow Validation Results**\n\n` +
+                    `**Workflow:** ${currentWorkflow.name}\n` +
+                    `**Status:** ${validation.valid ? '✅ Valid' : '❌ Has Errors'}\n\n` +
+                    (validation.errors.length > 0 ?
+                      `**❌ Errors (${validation.errors.length}):**\n${validation.errors.map(e => `• ${e}`).join('\n')}\n\n`
+                    : '') +
+                    (validation.warnings.length > 0 ?
+                      `**⚠️ Warnings (${validation.warnings.length}):**\n${validation.warnings.map(w => `• ${w}`).join('\n')}\n\n`
+                    : '') +
+                    (validation.suggestions.length > 0 ?
+                      `**💡 Suggestions:**\n${validation.suggestions.map(s => `• ${s}`).join('\n')}`
+                    : '')
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error validating workflow: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "suggest_workflow_improvements":
+        try {
+          const { workflowId, focusAreas = [] } = request.params.arguments;
+
+          // Get workflow data
+          const workflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          const improvements = {
+            performance: [],
+            reliability: [],
+            maintainability: [],
+            security: [],
+            bestPractices: []
+          };
+
+          // Performance improvements
+          if (focusAreas.length === 0 || focusAreas.includes('performance')) {
+            const httpNodes = workflow.nodes.filter(n => n.type.includes('httpRequest'));
+            if (httpNodes.length > 5) {
+              improvements.performance.push("Consider using batch HTTP requests or implementing connection pooling");
+            }
+
+            if (workflow.nodes.length > 20) {
+              improvements.performance.push("Large workflow detected - consider breaking into sub-workflows for better performance");
+            }
+
+            const loopNodes = workflow.nodes.filter(n => n.name.toLowerCase().includes('loop') || n.type.includes('split'));
+            if (loopNodes.length > 0) {
+              improvements.performance.push("Review loop implementations to ensure they don't process excessive data");
+            }
+          }
+
+          // Reliability improvements
+          if (focusAreas.length === 0 || focusAreas.includes('reliability')) {
+            const noErrorHandling = workflow.nodes.filter(n => !n.continueOnFail && !n.retryOnFail);
+            if (noErrorHandling.length > workflow.nodes.length * 0.8) {
+              improvements.reliability.push("Add error handling to critical nodes (continueOnFail, retryOnFail)");
+            }
+
+            const webhookNodes = workflow.nodes.filter(n => n.type.includes('webhook'));
+            if (webhookNodes.length > 0) {
+              improvements.reliability.push("Consider adding webhook validation and rate limiting");
+            }
+          }
+
+          // Maintainability improvements
+          if (focusAreas.length === 0 || focusAreas.includes('maintainability')) {
+            const nodesWithoutNotes = workflow.nodes.filter(n => !n.notes || n.notes.trim() === '');
+            if (nodesWithoutNotes.length > workflow.nodes.length * 0.5) {
+              improvements.maintainability.push("Add descriptive notes to nodes for better documentation");
+            }
+
+            if (workflow.nodes.length > 15) {
+              improvements.maintainability.push("Consider modularizing workflow into smaller, reusable components");
+            }
+          }
+
+          // Security improvements
+          if (focusAreas.length === 0 || focusAreas.includes('security')) {
+            const credentialNodes = workflow.nodes.filter(n => n.credentials && Object.keys(n.credentials).length > 0);
+            if (credentialNodes.length > 0) {
+              improvements.security.push("Review credential usage - ensure least privilege access");
+            }
+
+            const emailNodes = workflow.nodes.filter(n => n.type.includes('emailSend'));
+            if (emailNodes.length > 0) {
+              improvements.security.push("Validate email content to prevent injection attacks");
+            }
+          }
+
+          // Best practices
+          if (focusAreas.length === 0 || focusAreas.includes('best-practices')) {
+            const analysis = analyzeConnections(workflow);
+            if (analysis.orphaned.length > 0) {
+              improvements.bestPractices.push(`Remove ${analysis.orphaned.length} orphaned node(s): ${analysis.orphaned.join(', ')}`);
+            }
+
+            if (!workflow.settings || Object.keys(workflow.settings).length === 0) {
+              improvements.bestPractices.push("Configure workflow settings for proper execution handling");
+            }
+          }
+
+          const allImprovements = [
+            ...improvements.performance.map(i => `🚀 **Performance:** ${i}`),
+            ...improvements.reliability.map(i => `🛡️ **Reliability:** ${i}`),
+            ...improvements.maintainability.map(i => `🔧 **Maintainability:** ${i}`),
+            ...improvements.security.map(i => `🔒 **Security:** ${i}`),
+            ...improvements.bestPractices.map(i => `✨ **Best Practice:** ${i}`)
+          ];
+
+          if (allImprovements.length === 0) {
+            allImprovements.push("🎉 Your workflow follows good practices! No major improvements needed.");
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: `💡 **Workflow Improvement Suggestions**\n\n` +
+                    `**Workflow:** ${workflow.name}\n` +
+                    `**Analysis Focus:** ${focusAreas.length > 0 ? focusAreas.join(', ') : 'All areas'}\n\n` +
+                    `**Recommendations (${allImprovements.length}):**\n${allImprovements.join('\n')}\n\n` +
+                    `🌐 **View in n8n:** http://localhost:5678/workflow/${workflow.id}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error analyzing improvements: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      // Workflow Templating and Diff Tools
+      case "create_workflow_template":
+        try {
+          const { workflowId, templateName, description, parameterization = {}, category = 'custom' } = request.params.arguments;
+
+          // Get the source workflow
+          const sourceWorkflow = await makeApiRequest(`/workflows/${workflowId}`);
+
+          // Create template structure
+          const template = {
+            name: templateName,
+            description: description || `Template created from workflow: ${sourceWorkflow.name}`,
+            category: category,
+            createdAt: new Date().toISOString(),
+            sourceWorkflowId: workflowId,
+            sourceWorkflowName: sourceWorkflow.name,
+            structure: {
+              nodes: sourceWorkflow.nodes.map(node => {
+                // Create parameterized node
+                const templateNode = {
+                  id: node.id,
+                  name: node.name,
+                  type: node.type,
+                  typeVersion: node.typeVersion,
+                  position: node.position,
+                  parameters: { ...node.parameters }
+                };
+
+                // Extract configurable parameters if specified
+                if (parameterization.extractParameters) {
+                  parameterization.extractParameters.forEach(paramPath => {
+                    const [nodeId, paramName] = paramPath.split('.');
+                    if (node.id === nodeId || node.name === nodeId) {
+                      if (node.parameters && node.parameters[paramName] !== undefined) {
+                        templateNode.configurableParameters = templateNode.configurableParameters || {};
+                        templateNode.configurableParameters[paramName] = {
+                          defaultValue: node.parameters[paramName],
+                          description: `Configurable parameter: ${paramName}`,
+                          type: typeof node.parameters[paramName]
+                        };
+                      }
+                    }
+                  });
+                }
+
+                return templateNode;
+              }),
+              connections: sourceWorkflow.connections,
+              settings: sourceWorkflow.settings
+            }
+          };
+
+          // Store template (in production, this would be saved to database)
+          templateMarketplace.set(templateName, template);
+
+          return {
+            content: [{
+              type: "text",
+              text: `✅ **Template Created Successfully**\n\n` +
+                    `**Template Name:** ${templateName}\n` +
+                    `**Category:** ${category}\n` +
+                    `**Source Workflow:** ${sourceWorkflow.name}\n` +
+                    `**Description:** ${template.description}\n` +
+                    `**Nodes:** ${template.structure.nodes.length}\n` +
+                    `**Configurable Parameters:** ${parameterization.extractParameters ? parameterization.extractParameters.length : 0}\n\n` +
+                    `📝 **Template Details:**\n${template.structure.nodes.map(n => `• ${n.name} (${n.type.replace('n8n-nodes-base.', '')})`).join('\n')}\n\n` +
+                    `💡 **Usage:** Use 'apply_workflow_template' with templateName: "${templateName}"`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error creating template: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "apply_workflow_template":
+        try {
+          const { templateName, workflowName, parameters = {}, active = false } = request.params.arguments;
+
+          // Get template from store
+          const template = templateMarketplace.get(templateName);
+          if (!template) {
+            return {
+              content: [{
+                type: "text",
+                text: `❌ **Template Not Found**\n\nTemplate '${templateName}' does not exist.\n\n**Available templates:**\n${Array.from(templateMarketplace.keys()).map(name => `• ${name}`).join('\n') || 'None available'}`
+              }],
+              isError: true
+            };
+          }
+
+          // Apply template with custom parameters
+          const workflowData = {
+            name: workflowName,
+            nodes: template.structure.nodes.map(node => {
+              const workflowNode = {
+                id: node.id,
+                name: node.name,
+                type: node.type,
+                typeVersion: node.typeVersion,
+                position: node.position,
+                parameters: { ...node.parameters }
+              };
+
+              // Apply custom parameters if node has configurable parameters
+              if (node.configurableParameters && parameters[node.id] || parameters[node.name]) {
+                const nodeParams = parameters[node.id] || parameters[node.name];
+                Object.keys(node.configurableParameters).forEach(paramName => {
+                  if (nodeParams[paramName] !== undefined) {
+                    workflowNode.parameters[paramName] = nodeParams[paramName];
+                  }
+                });
+              }
+
+              return workflowNode;
+            }),
+            connections: template.structure.connections,
+            settings: template.structure.settings || {},
+            active: active
+          };
+
+          // Create workflow using existing creation logic
+          const sanitizedWorkflow = sanitizeWorkflowForAPI(workflowData);
+          const result = await createWorkflowWithRetry(sanitizedWorkflow);
+
+          return {
+            content: [{
+              type: "text",
+              text: `✅ **Workflow Created from Template**\n\n` +
+                    `**Template:** ${templateName}\n` +
+                    `**New Workflow:** ${result.name}\n` +
+                    `**ID:** ${result.id}\n` +
+                    `**Status:** ${result.active ? '🟢 Active' : '🔴 Inactive'}\n` +
+                    `**Nodes:** ${result.nodes.length}\n` +
+                    `**Parameters Applied:** ${Object.keys(parameters).length}\n\n` +
+                    `🌐 **View in n8n:** http://localhost:5678/workflow/${result.id}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error applying template: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "workflow_diff":
+        try {
+          const { workflowId1, workflowId2, diffType = "full", format = "text" } = request.params.arguments;
+
+          // Get both workflows
+          const workflow1 = await makeApiRequest(`/workflows/${workflowId1}`);
+          const workflow2 = await makeApiRequest(`/workflows/${workflowId2}`);
+
+          // Perform diff analysis
+          const diff = {
+            workflow1: { name: workflow1.name, id: workflow1.id },
+            workflow2: { name: workflow2.name, id: workflow2.id },
+            differences: {
+              nodes: {},
+              connections: {},
+              settings: {}
+            }
+          };
+
+          // Compare nodes
+          if (diffType === "full" || diffType === "nodes") {
+            const nodes1 = new Map(workflow1.nodes.map(n => [n.name, n]));
+            const nodes2 = new Map(workflow2.nodes.map(n => [n.name, n]));
+
+            // Find added, removed, and modified nodes
+            diff.differences.nodes.added = workflow2.nodes.filter(n => !nodes1.has(n.name));
+            diff.differences.nodes.removed = workflow1.nodes.filter(n => !nodes2.has(n.name));
+            diff.differences.nodes.modified = [];
+
+            // Check for modified nodes
+            workflow1.nodes.forEach(node1 => {
+              const node2 = nodes2.get(node1.name);
+              if (node2) {
+                const changes = [];
+                if (node1.type !== node2.type) changes.push(`type: ${node1.type} → ${node2.type}`);
+                if (JSON.stringify(node1.parameters) !== JSON.stringify(node2.parameters)) {
+                  changes.push(`parameters modified`);
+                }
+                if (JSON.stringify(node1.position) !== JSON.stringify(node2.position)) {
+                  changes.push(`position moved`);
+                }
+
+                if (changes.length > 0) {
+                  diff.differences.nodes.modified.push({
+                    name: node1.name,
+                    changes: changes
+                  });
+                }
+              }
+            });
+          }
+
+          // Compare connections
+          if (diffType === "full" || diffType === "connections") {
+            const connections1 = JSON.stringify(workflow1.connections || {});
+            const connections2 = JSON.stringify(workflow2.connections || {});
+
+            if (connections1 !== connections2) {
+              diff.differences.connections.changed = true;
+              diff.differences.connections.details = "Connection structure modified";
+            } else {
+              diff.differences.connections.changed = false;
+            }
+          }
+
+          // Compare settings
+          if (diffType === "full" || diffType === "settings") {
+            const settings1 = JSON.stringify(workflow1.settings || {});
+            const settings2 = JSON.stringify(workflow2.settings || {});
+
+            if (settings1 !== settings2) {
+              diff.differences.settings.changed = true;
+              diff.differences.settings.details = "Workflow settings modified";
+            } else {
+              diff.differences.settings.changed = false;
+            }
+          }
+
+          // Format output based on requested format
+          let output = "";
+          if (format === "json") {
+            output = JSON.stringify(diff, null, 2);
+          } else if (format === "visual") {
+            output = `${workflow1.name} ←→ ${workflow2.name}\n` +
+                     `${'='.repeat(workflow1.name.length + workflow2.name.length + 5)}\n\n` +
+                     `Nodes: ${workflow1.nodes.length} ←→ ${workflow2.nodes.length}\n` +
+                     `Connections: ${Object.keys(workflow1.connections || {}).length} ←→ ${Object.keys(workflow2.connections || {}).length}`;
+          } else {
+            // Text format (default)
+            output = `**Workflow Comparison:**\n` +
+                     `• ${workflow1.name} (${workflow1.id})\n` +
+                     `• ${workflow2.name} (${workflow2.id})\n\n`;
+
+            if (diff.differences.nodes) {
+              if (diff.differences.nodes.added?.length > 0) {
+                output += `**🆕 Added Nodes (${diff.differences.nodes.added.length}):**\n${diff.differences.nodes.added.map(n => `• ${n.name} (${n.type.replace('n8n-nodes-base.', '')})`).join('\n')}\n\n`;
+              }
+              if (diff.differences.nodes.removed?.length > 0) {
+                output += `**🗑️ Removed Nodes (${diff.differences.nodes.removed.length}):**\n${diff.differences.nodes.removed.map(n => `• ${n.name} (${n.type.replace('n8n-nodes-base.', '')})`).join('\n')}\n\n`;
+              }
+              if (diff.differences.nodes.modified?.length > 0) {
+                output += `**✏️ Modified Nodes (${diff.differences.nodes.modified.length}):**\n${diff.differences.nodes.modified.map(n => `• ${n.name}: ${n.changes.join(', ')}`).join('\n')}\n\n`;
+              }
+            }
+
+            if (diff.differences.connections?.changed) {
+              output += `**🔗 Connections:** ${diff.differences.connections.details}\n\n`;
+            }
+
+            if (diff.differences.settings?.changed) {
+              output += `**⚙️ Settings:** ${diff.differences.settings.details}\n\n`;
+            }
+
+            if (!diff.differences.nodes?.added?.length &&
+                !diff.differences.nodes?.removed?.length &&
+                !diff.differences.nodes?.modified?.length &&
+                !diff.differences.connections?.changed &&
+                !diff.differences.settings?.changed) {
+              output += `**✅ No differences found** - Workflows are identical`;
+            }
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: `🔍 **Workflow Diff Results**\n\n${output}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error comparing workflows: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "list_workflow_templates":
+        try {
+          const { category, search } = request.params.arguments;
+
+          let templates = Array.from(templateMarketplace.entries()).map(([name, template]) => ({
+            name,
+            ...template
+          }));
+
+          // Filter by category if specified
+          if (category) {
+            templates = templates.filter(t => t.category === category);
+          }
+
+          // Filter by search if specified
+          if (search) {
+            const searchLower = search.toLowerCase();
+            templates = templates.filter(t =>
+              t.name.toLowerCase().includes(searchLower) ||
+              t.description.toLowerCase().includes(searchLower)
+            );
+          }
+
+          // Group templates by category
+          const templatesByCategory = {};
+          templates.forEach(template => {
+            if (!templatesByCategory[template.category]) {
+              templatesByCategory[template.category] = [];
+            }
+            templatesByCategory[template.category].push(template);
+          });
+
+          let output = `📚 **Available Workflow Templates**\n\n`;
+
+          if (templates.length === 0) {
+            output += `No templates found${category ? ` in category "${category}"` : ''}${search ? ` matching "${search}"` : ''}\n\n`;
+            output += `💡 **Tip:** Create templates using the 'create_workflow_template' tool`;
+          } else {
+            output += `**Found ${templates.length} template(s)**\n\n`;
+
+            Object.entries(templatesByCategory).forEach(([cat, catTemplates]) => {
+              output += `**${cat.toUpperCase()} (${catTemplates.length})**\n`;
+              catTemplates.forEach(template => {
+                output += `• **${template.name}**\n`;
+                output += `  └ ${template.description}\n`;
+                output += `  └ Nodes: ${template.structure.nodes.length} | Source: ${template.sourceWorkflowName}\n`;
+              });
+              output += '\n';
+            });
+
+            output += `💡 **Usage:** Use 'apply_workflow_template' with any template name above`;
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: output
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error listing templates: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "rollback_workflow":
+        try {
+          const { workflowId, backupData, createBackup = true } = request.params.arguments;
+
+          // Get current workflow for backup if requested
+          let currentBackup = null;
+          if (createBackup) {
+            currentBackup = await makeApiRequest(`/workflows/${workflowId}`);
+          }
+
+          // Validate backup data
+          if (!backupData || !backupData.nodes) {
+            return {
+              content: [{
+                type: "text",
+                text: `❌ **Invalid Backup Data**\n\nThe backup data must contain valid workflow structure with nodes.`
+              }],
+              isError: true
+            };
+          }
+
+          // Apply the rollback
+          const sanitizedBackup = sanitizeWorkflowForAPI(backupData);
+          const result = await makeApiRequest(`/workflows/${workflowId}`, 'PUT', sanitizedBackup);
+
+          let output = `🔄 **Workflow Rollback Successful**\n\n` +
+                       `**Workflow:** ${result.name}\n` +
+                       `**ID:** ${result.id}\n` +
+                       `**Restored Nodes:** ${result.nodes.length}\n` +
+                       `**Rollback Time:** ${new Date().toLocaleString()}\n\n`;
+
+          if (currentBackup) {
+            // Store the current backup
+            const backupKey = `${workflowId}_backup_${Date.now()}`;
+            templateMarketplace.set(backupKey, {
+              name: `Backup of ${currentBackup.name}`,
+              description: `Automatic backup created during rollback`,
+              category: 'backup',
+              createdAt: new Date().toISOString(),
+              structure: currentBackup
+            });
+
+            output += `💾 **Backup Created:** ${backupKey}\n`;
+            output += `    (Previous state saved before rollback)\n\n`;
+          }
+
+          output += `🌐 **View in n8n:** http://localhost:5678/workflow/${result.id}`;
+
+          return {
+            content: [{
+              type: "text",
+              text: output
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error during rollback: ${error.response?.data?.message || error.message}`
+            }],
+            isError: true
           };
         }
 
