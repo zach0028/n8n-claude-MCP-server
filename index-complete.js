@@ -1,5 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
 import { createRequire } from 'module';
 
@@ -36,7 +37,7 @@ class N8nMcpServer {
 
   setupHandlers() {
     // Liste complète des tools disponibles
-    this.server.setRequestHandler('tools/list', async () => {
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: [
           // ===== OUTILS DE BASE =====
@@ -406,7 +407,7 @@ class N8nMcpServer {
     });
 
     // Exécution des tools
-    this.server.setRequestHandler('tools/call', async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
       try {
