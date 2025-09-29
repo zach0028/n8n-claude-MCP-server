@@ -476,7 +476,7 @@ class N8nMcpServer {
   async makeApiRequest(endpoint, method = 'GET', data = null) {
     const config = {
       method,
-      url: `${N8N_API_URL}/api/v1${endpoint}`,
+      url: `${N8N_API_URL}${endpoint}`,
       headers: {
         'X-N8N-API-KEY': N8N_API_KEY,
         'Content-Type': 'application/json',
@@ -493,7 +493,7 @@ class N8nMcpServer {
 
   async listWorkflows() {
     try {
-      const workflows = await this.makeApiRequest('/workflows');
+      const workflows = await this.makeApiRequest('/rest/workflows');
       return {
         content: [
           {
@@ -520,7 +520,7 @@ class N8nMcpServer {
   }
 
   async getWorkflow(workflowId) {
-    const workflow = await this.makeApiRequest(`/workflows/${workflowId}`);
+    const workflow = await this.makeApiRequest(`/rest/workflows/${workflowId}`);
     return {
       content: [
         {
@@ -540,7 +540,7 @@ class N8nMcpServer {
       settings: {},
     };
 
-    const result = await this.makeApiRequest('/workflows', 'POST', workflowData);
+    const result = await this.makeApiRequest('/rest/workflows', 'POST', workflowData);
     return {
       content: [
         {
@@ -553,7 +553,7 @@ class N8nMcpServer {
 
   async updateWorkflow({ workflowId, name, nodes, connections, active }) {
     // Récupérer le workflow actuel
-    const workflow = await this.makeApiRequest(`/workflows/${workflowId}`);
+    const workflow = await this.makeApiRequest(`/rest/workflows/${workflowId}`);
     
     // Mettre à jour uniquement les champs fournis
     if (name !== undefined) workflow.name = name;
@@ -561,7 +561,7 @@ class N8nMcpServer {
     if (connections !== undefined) workflow.connections = connections;
     if (active !== undefined) workflow.active = active;
 
-    const result = await this.makeApiRequest(`/workflows/${workflowId}`, 'PATCH', workflow);
+    const result = await this.makeApiRequest(`/rest/workflows/${workflowId}`, 'PATCH', workflow);
     return {
       content: [
         {
@@ -573,7 +573,7 @@ class N8nMcpServer {
   }
 
   async deleteWorkflow(workflowId) {
-    await this.makeApiRequest(`/workflows/${workflowId}`, 'DELETE');
+    await this.makeApiRequest(`/rest/workflows/${workflowId}`, 'DELETE');
     return {
       content: [
         {
@@ -585,7 +585,7 @@ class N8nMcpServer {
   }
 
   async executeWorkflow(workflowId, data = {}) {
-    const result = await this.makeApiRequest(`/workflows/${workflowId}/execute`, 'POST', { data });
+    const result = await this.makeApiRequest(`/rest/workflows/${workflowId}/execute`, 'POST', { data });
     return {
       content: [
         {
@@ -598,7 +598,7 @@ class N8nMcpServer {
 
   async listNodeTypes() {
     try {
-      const nodeTypes = await this.makeApiRequest('/node-types');
+      const nodeTypes = await this.makeApiRequest('/rest/node-types');
       const categories = {};
 
       Object.values(nodeTypes).forEach(node => {
@@ -802,7 +802,7 @@ class N8nMcpServer {
   async modifySingleNode(args) {
     try {
       // Récupérer le workflow
-      const workflow = await this.makeApiRequest(`/workflows/${args.workflowId}`);
+      const workflow = await this.makeApiRequest(`/rest/workflows/${args.workflowId}`);
       
       // Trouver le nœud
       const node = workflow.nodes.find(n => n.id === args.nodeId || n.name === args.nodeId);
@@ -814,7 +814,7 @@ class N8nMcpServer {
       Object.assign(node, args.nodeUpdates);
 
       // Mettre à jour le workflow
-      const result = await this.makeApiRequest(`/workflows/${args.workflowId}`, 'PATCH', workflow);
+      const result = await this.makeApiRequest(`/rest/workflows/${args.workflowId}`, 'PATCH', workflow);
       
       return {
         content: [
@@ -831,7 +831,7 @@ class N8nMcpServer {
 
   async addNodesToWorkflow(args) {
     try {
-      const workflow = await this.makeApiRequest(`/workflows/${args.workflowId}`);
+      const workflow = await this.makeApiRequest(`/rest/workflows/${args.workflowId}`);
       
       // Ajouter les nouveaux nœuds
       workflow.nodes.push(...args.nodes);
@@ -851,7 +851,7 @@ class N8nMcpServer {
         }]];
       }
 
-      const result = await this.makeApiRequest(`/workflows/${args.workflowId}`, 'PATCH', workflow);
+      const result = await this.makeApiRequest(`/rest/workflows/${args.workflowId}`, 'PATCH', workflow);
       
       return {
         content: [
@@ -868,7 +868,7 @@ class N8nMcpServer {
 
   async removeNodesFromWorkflow(args) {
     try {
-      const workflow = await this.makeApiRequest(`/workflows/${args.workflowId}`);
+      const workflow = await this.makeApiRequest(`/rest/workflows/${args.workflowId}`);
       
       // Supprimer les nœuds
       workflow.nodes = workflow.nodes.filter(n => 
@@ -894,7 +894,7 @@ class N8nMcpServer {
         });
       }
 
-      const result = await this.makeApiRequest(`/workflows/${args.workflowId}`, 'PATCH', workflow);
+      const result = await this.makeApiRequest(`/rest/workflows/${args.workflowId}`, 'PATCH', workflow);
       
       return {
         content: [
