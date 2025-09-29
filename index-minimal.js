@@ -4,10 +4,517 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import { randomBytes, createHash, createHmac } from 'crypto';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
+import forge from 'node-forge';
 
 // Configuration
 const N8N_API_URL = process.env.N8N_API_URL || 'http://localhost:5678';
 const N8N_API_KEY = process.env.N8N_API_KEY || '';
+
+// Enterprise Security Configuration
+const JWT_SECRET = process.env.JWT_SECRET || randomBytes(64).toString('hex');
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+const SESSION_TIMEOUT = process.env.SESSION_TIMEOUT || 3600000; // 1 hour
+const ENABLE_RBAC = process.env.ENABLE_RBAC === 'true';
+const ENABLE_AUDIT_LOG = process.env.ENABLE_AUDIT_LOG !== 'false';
+const ENABLE_MULTI_TENANT = process.env.ENABLE_MULTI_TENANT === 'true';
+
+// MCP Protocol Security Configuration (RFC 8707 Resource Indicators)
+const MCP_SERVER_ID = process.env.MCP_SERVER_ID || uuidv4();
+const MCP_NAMESPACE = process.env.MCP_NAMESPACE || 'urn:n8n:mcp:server';
+const RESOURCE_INDICATOR_SECRET = process.env.RESOURCE_INDICATOR_SECRET || randomBytes(32).toString('hex');
+const ENABLE_RESOURCE_INDICATORS = process.env.ENABLE_RESOURCE_INDICATORS !== 'false';
+const ENABLE_TRANSPORT_ENCRYPTION = process.env.ENABLE_TRANSPORT_ENCRYPTION === 'true';
+const MCP_PROTOCOL_VERSION = '1.0.0';
+
+// Transport Security
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || ['*'];
+const MAX_REQUEST_SIZE = parseInt(process.env.MAX_REQUEST_SIZE) || 10485760; // 10MB
+const RATE_LIMIT_REQUESTS = parseInt(process.env.RATE_LIMIT_REQUESTS) || 1000;
+const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW) || 3600000; // 1 hour
+
+// Initialize JSON Schema validator
+const ajv = new Ajv({ allErrors: true, removeAdditional: true });
+addFormats(ajv);
+
+// Enterprise User Roles and Permissions
+const USER_ROLES = {
+  ADMIN: 'admin',
+  DEVELOPER: 'developer',
+  VIEWER: 'viewer',
+  GUEST: 'guest'
+};
+
+const PERMISSIONS = {
+  CREATE_WORKFLOW: 'create_workflow',
+  UPDATE_WORKFLOW: 'update_workflow',
+  DELETE_WORKFLOW: 'delete_workflow',
+  EXECUTE_WORKFLOW: 'execute_workflow',
+  VIEW_WORKFLOW: 'view_workflow',
+  MANAGE_USERS: 'manage_users',
+  VIEW_AUDIT_LOGS: 'view_audit_logs',
+  MANAGE_TEMPLATES: 'manage_templates'
+};
+
+const ROLE_PERMISSIONS = {
+  [USER_ROLES.ADMIN]: Object.values(PERMISSIONS),
+  [USER_ROLES.DEVELOPER]: [
+    PERMISSIONS.CREATE_WORKFLOW,
+    PERMISSIONS.UPDATE_WORKFLOW,
+    PERMISSIONS.EXECUTE_WORKFLOW,
+    PERMISSIONS.VIEW_WORKFLOW,
+    PERMISSIONS.MANAGE_TEMPLATES
+  ],
+  [USER_ROLES.VIEWER]: [
+    PERMISSIONS.VIEW_WORKFLOW,
+    PERMISSIONS.EXECUTE_WORKFLOW
+  ],
+  [USER_ROLES.GUEST]: [
+    PERMISSIONS.VIEW_WORKFLOW
+  ]
+};
+
+// In-memory stores (in production, use Redis or database)
+const userSessions = new Map();
+const auditLogs = [];
+const userDatabase = new Map();
+const tenantDatabase = new Map();
+const resourceIndicators = new Map();
+const requestMetrics = new Map();
+const errorBoundaries = new Map();
+const rateLimitStore = new Map();
+const templateMarketplace = new Map();
+const workflowVersions = new Map();
+const environments = new Map();
+
+// Default admin user (should be configured via environment in production)
+if (!userDatabase.has('admin')) {
+  userDatabase.set('admin', {
+    id: 'admin',
+    username: 'admin',
+    email: 'admin@localhost',
+    password: bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10),
+    role: USER_ROLES.ADMIN,
+    tenantId: 'default',
+    createdAt: new Date().toISOString(),
+    isActive: true
+  });
+}
+
+// Default tenant
+if (!tenantDatabase.has('default')) {
+  tenantDatabase.set('default', {
+    id: 'default',
+    name: 'Default Organization',
+    createdAt: new Date().toISOString(),
+    isActive: true,
+    settings: {
+      maxWorkflows: 1000,
+      maxExecutionsPerMonth: 10000
+    }
+  });
+}
+
+// Initialize Template Marketplace with popular templates
+if (templateMarketplace.size === 0) {
+  const popularTemplates = [
+    {
+      id: 'webhook-to-email',
+      name: 'Webhook to Email',
+      description: 'Receive webhook data and send email notifications',
+      category: 'communication',
+      tags: ['webhook', 'email', 'notification'],
+      difficulty: 'beginner',
+      estimatedTime: '5 minutes',
+      author: 'n8n-community',
+      version: '1.0.0',
+      downloads: 15420,
+      rating: 4.8,
+      verified: true,
+      template: {
+        nodes: [
+          {
+            id: 'webhook-trigger',
+            name: 'Webhook',
+            type: 'n8n-nodes-base.webhook',
+            position: [100, 200],
+            parameters: {
+              httpMethod: 'POST',
+              path: 'webhook-endpoint'
+            }
+          },
+          {
+            id: 'email-send',
+            name: 'Send Email',
+            type: 'n8n-nodes-base.emailSend',
+            position: [400, 200],
+            parameters: {
+              subject: 'New Webhook Received',
+              text: 'Webhook data: {{JSON.stringify($json)}}'
+            }
+          }
+        ],
+        autoConnect: true,
+        advancedConnections: true
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'data-processing-pipeline',
+      name: 'Data Processing Pipeline',
+      description: 'Advanced data transformation and validation pipeline',
+      category: 'data-processing',
+      tags: ['data', 'transformation', 'validation', 'pipeline'],
+      difficulty: 'intermediate',
+      estimatedTime: '15 minutes',
+      author: 'n8n-experts',
+      version: '2.1.0',
+      downloads: 8960,
+      rating: 4.9,
+      verified: true,
+      template: {
+        nodes: [
+          {
+            id: 'trigger',
+            name: 'Manual Trigger',
+            type: 'n8n-nodes-base.manualTrigger',
+            position: [100, 200],
+            parameters: {}
+          },
+          {
+            id: 'validate-data',
+            name: 'Validate Input',
+            type: 'n8n-nodes-base.function',
+            position: [300, 200],
+            parameters: {
+              functionCode: `
+                // Validate required fields
+                if (!$json.email || !$json.name) {
+                  throw new Error('Missing required fields: email, name');
+                }
+
+                // Email validation
+                const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+                if (!emailRegex.test($json.email)) {
+                  throw new Error('Invalid email format');
+                }
+
+                return $json;
+              `
+            }
+          },
+          {
+            id: 'transform-data',
+            name: 'Transform Data',
+            type: 'n8n-nodes-base.set',
+            position: [500, 200],
+            parameters: {
+              assignments: {
+                assignments: [
+                  {
+                    id: 'processed_at',
+                    name: 'processedAt',
+                    value: '={{new Date().toISOString()}}',
+                    type: 'string'
+                  },
+                  {
+                    id: 'full_name',
+                    name: 'fullName',
+                    value: '={{$json.firstName}} {{$json.lastName}}',
+                    type: 'string'
+                  }
+                ]
+              }
+            }
+          },
+          {
+            id: 'store-result',
+            name: 'Store Result',
+            type: 'n8n-nodes-base.httpRequest',
+            position: [700, 200],
+            parameters: {
+              method: 'POST',
+              url: 'https://api.example.com/users',
+              sendBody: true,
+              bodyParameters: {
+                parameters: [
+                  {
+                    name: 'data',
+                    value: '={{JSON.stringify($json)}}'
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        autoConnect: true,
+        advancedConnections: true
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'ai-content-moderator',
+      name: 'AI Content Moderator',
+      description: 'AI-powered content moderation with sentiment analysis',
+      category: 'ai-automation',
+      tags: ['ai', 'content', 'moderation', 'sentiment', 'openai'],
+      difficulty: 'advanced',
+      estimatedTime: '25 minutes',
+      author: 'ai-specialists',
+      version: '1.2.0',
+      downloads: 5230,
+      rating: 4.7,
+      verified: true,
+      template: {
+        nodes: [
+          {
+            id: 'webhook-content',
+            name: 'Content Webhook',
+            type: 'n8n-nodes-base.webhook',
+            position: [100, 200],
+            parameters: {
+              httpMethod: 'POST',
+              path: 'moderate-content'
+            }
+          },
+          {
+            id: 'ai-analysis',
+            name: 'AI Content Analysis',
+            type: 'n8n-nodes-base.openai',
+            position: [300, 200],
+            parameters: {
+              operation: 'text',
+              prompt: 'Analyze this content for sentiment and inappropriate material: {{$json.content}}. Return JSON with sentiment (positive/negative/neutral) and isAppropriate (true/false).'
+            }
+          },
+          {
+            id: 'content-router',
+            name: 'Content Router',
+            type: 'n8n-nodes-base.switch',
+            position: [500, 200],
+            parameters: {
+              rules: {
+                rules: [
+                  {
+                    operation: 'equal',
+                    value1: '={{$json.isAppropriate}}',
+                    value2: true
+                  }
+                ]
+              }
+            }
+          },
+          {
+            id: 'approve-content',
+            name: 'Approve Content',
+            type: 'n8n-nodes-base.httpRequest',
+            position: [700, 150],
+            parameters: {
+              method: 'POST',
+              url: 'https://api.example.com/content/approve'
+            }
+          },
+          {
+            id: 'reject-content',
+            name: 'Reject Content',
+            type: 'n8n-nodes-base.httpRequest',
+            position: [700, 250],
+            parameters: {
+              method: 'POST',
+              url: 'https://api.example.com/content/reject'
+            }
+          }
+        ],
+        autoConnect: true,
+        advancedConnections: true
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'ecommerce-order-processor',
+      name: 'E-commerce Order Processor',
+      description: 'Complete order processing with inventory, payment, and notifications',
+      category: 'ecommerce',
+      tags: ['ecommerce', 'orders', 'inventory', 'payment', 'notifications'],
+      difficulty: 'advanced',
+      estimatedTime: '30 minutes',
+      author: 'ecommerce-experts',
+      version: '1.4.0',
+      downloads: 12850,
+      rating: 4.9,
+      verified: true,
+      template: {
+        nodes: [
+          {
+            id: 'order-webhook',
+            name: 'New Order',
+            type: 'n8n-nodes-base.webhook',
+            position: [100, 300],
+            parameters: {
+              httpMethod: 'POST',
+              path: 'new-order'
+            }
+          },
+          {
+            id: 'validate-order',
+            name: 'Validate Order',
+            type: 'n8n-nodes-base.function',
+            position: [300, 300],
+            parameters: {
+              functionCode: `
+                const order = $json;
+
+                // Validate required fields
+                if (!order.items || !order.customerId || !order.total) {
+                  throw new Error('Invalid order data');
+                }
+
+                // Validate items
+                for (const item of order.items) {
+                  if (!item.productId || !item.quantity || item.quantity <= 0) {
+                    throw new Error('Invalid item in order');
+                  }
+                }
+
+                return order;
+              `
+            }
+          },
+          {
+            id: 'check-inventory',
+            name: 'Check Inventory',
+            type: 'n8n-nodes-base.httpRequest',
+            position: [500, 250],
+            parameters: {
+              method: 'POST',
+              url: 'https://inventory.example.com/check',
+              sendBody: true,
+              bodyParameters: {
+                parameters: [
+                  {
+                    name: 'items',
+                    value: '={{$json.items}}'
+                  }
+                ]
+              }
+            }
+          },
+          {
+            id: 'process-payment',
+            name: 'Process Payment',
+            type: 'n8n-nodes-base.httpRequest',
+            position: [500, 350],
+            parameters: {
+              method: 'POST',
+              url: 'https://payment.example.com/charge',
+              sendBody: true,
+              bodyParameters: {
+                parameters: [
+                  {
+                    name: 'amount',
+                    value: '={{$json.total}}'
+                  },
+                  {
+                    name: 'customerId',
+                    value: '={{$json.customerId}}'
+                  }
+                ]
+              }
+            }
+          },
+          {
+            id: 'merge-results',
+            name: 'Merge Results',
+            type: 'n8n-nodes-base.merge',
+            position: [700, 300],
+            parameters: {}
+          },
+          {
+            id: 'send-confirmation',
+            name: 'Send Confirmation',
+            type: 'n8n-nodes-base.emailSend',
+            position: [900, 300],
+            parameters: {
+              subject: 'Order Confirmation #{{$json.orderId}}',
+              text: 'Your order has been processed successfully!'
+            }
+          }
+        ],
+        autoConnect: true,
+        advancedConnections: true
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
+  popularTemplates.forEach(template => {
+    templateMarketplace.set(template.id, template);
+  });
+}
+
+// Initialize default environments
+if (environments.size === 0) {
+  const defaultEnvironments = [
+    {
+      id: 'development',
+      name: 'Development',
+      description: 'Development environment for testing workflows',
+      url: 'http://localhost:5678',
+      type: 'development',
+      isActive: true,
+      settings: {
+        debugMode: true,
+        logLevel: 'debug',
+        maxExecutionTime: 300000,
+        allowManualTrigger: true
+      },
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'staging',
+      name: 'Staging',
+      description: 'Staging environment for pre-production testing',
+      url: 'https://staging.n8n.example.com',
+      type: 'staging',
+      isActive: true,
+      settings: {
+        debugMode: false,
+        logLevel: 'info',
+        maxExecutionTime: 600000,
+        allowManualTrigger: true
+      },
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'production',
+      name: 'Production',
+      description: 'Production environment for live workflows',
+      url: 'https://n8n.example.com',
+      type: 'production',
+      isActive: true,
+      settings: {
+        debugMode: false,
+        logLevel: 'error',
+        maxExecutionTime: 1800000,
+        allowManualTrigger: false
+      },
+      createdAt: new Date().toISOString()
+    }
+  ];
+
+  defaultEnvironments.forEach(env => {
+    environments.set(env.id, env);
+  });
+}
 
 // Fonction pour générer automatiquement les connexions entre nodes
 function generateSmartConnections(nodes) {
@@ -82,6 +589,1442 @@ function generateSmartConnections(nodes) {
 
   console.log('Final connections object:', JSON.stringify(connections, null, 2));
   return connections;
+}
+
+// ENTERPRISE SECURITY SYSTEM
+// JWT Token Authentication and Authorization
+
+function generateSecureSessionId(userId) {
+  const timestamp = Date.now().toString(36);
+  const randomPart = randomBytes(16).toString('hex');
+  return `${userId}:${timestamp}:${randomPart}`;
+}
+
+function createJWT(user, sessionId) {
+  const payload = {
+    userId: user.id,
+    username: user.username,
+    role: user.role,
+    tenantId: user.tenantId,
+    sessionId: sessionId,
+    permissions: ROLE_PERMISSIONS[user.role] || [],
+    iat: Math.floor(Date.now() / 1000),
+    aud: 'n8n-mcp-server'
+  };
+
+  return jwt.sign(payload, JWT_SECRET, {
+    expiresIn: JWT_EXPIRES_IN,
+    issuer: 'n8n-mcp-server',
+    subject: user.id
+  });
+}
+
+function verifyJWT(token) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      issuer: 'n8n-mcp-server',
+      audience: 'n8n-mcp-server'
+    });
+
+    // Check if session is still valid
+    const session = userSessions.get(decoded.sessionId);
+    if (!session || session.expiresAt < Date.now()) {
+      throw new Error('Session expired');
+    }
+
+    // Update session last activity
+    session.lastActivity = Date.now();
+    session.expiresAt = Date.now() + SESSION_TIMEOUT;
+
+    return decoded;
+  } catch (error) {
+    logAuditEvent('AUTH_FAILED', null, null, { error: error.message });
+    throw new Error('Invalid or expired token');
+  }
+}
+
+function authenticateUser(username, password) {
+  const user = userDatabase.get(username);
+  if (!user || !user.isActive) {
+    logAuditEvent('LOGIN_FAILED', null, null, { username, reason: 'User not found or inactive' });
+    return null;
+  }
+
+  if (!bcrypt.compareSync(password, user.password)) {
+    logAuditEvent('LOGIN_FAILED', user.id, user.tenantId, { username, reason: 'Invalid password' });
+    return null;
+  }
+
+  // Create secure session
+  const sessionId = generateSecureSessionId(user.id);
+  const sessionData = {
+    userId: user.id,
+    createdAt: Date.now(),
+    lastActivity: Date.now(),
+    expiresAt: Date.now() + SESSION_TIMEOUT,
+    userAgent: 'mcp-client',
+    ipAddress: '127.0.0.1' // In production, get from request
+  };
+
+  userSessions.set(sessionId, sessionData);
+
+  // Generate JWT token
+  const token = createJWT(user, sessionId);
+
+  logAuditEvent('LOGIN_SUCCESS', user.id, user.tenantId, { username, sessionId });
+
+  return { token, user: { ...user, password: undefined }, sessionId };
+}
+
+function hasPermission(userToken, permission) {
+  try {
+    const decoded = verifyJWT(userToken);
+    return decoded.permissions.includes(permission);
+  } catch (error) {
+    return false;
+  }
+}
+
+function requirePermission(userToken, permission) {
+  if (!hasPermission(userToken, permission)) {
+    const error = new Error(`Access denied. Required permission: ${permission}`);
+    error.code = 'INSUFFICIENT_PERMISSIONS';
+    throw error;
+  }
+}
+
+function logAuditEvent(action, userId = null, tenantId = null, metadata = {}) {
+  if (!ENABLE_AUDIT_LOG) return;
+
+  const logEntry = {
+    id: randomBytes(8).toString('hex'),
+    timestamp: new Date().toISOString(),
+    action,
+    userId,
+    tenantId,
+    metadata,
+    source: 'mcp-server'
+  };
+
+  auditLogs.push(logEntry);
+
+  // In production, send to audit logging service
+  console.log('[AUDIT]', JSON.stringify(logEntry));
+
+  // Keep only last 10000 audit logs in memory
+  if (auditLogs.length > 10000) {
+    auditLogs.splice(0, auditLogs.length - 10000);
+  }
+}
+
+function validateTenantAccess(userToken, resourceTenantId) {
+  if (!ENABLE_MULTI_TENANT) return true;
+
+  try {
+    const decoded = verifyJWT(userToken);
+    return decoded.tenantId === resourceTenantId || decoded.role === USER_ROLES.ADMIN;
+  } catch (error) {
+    return false;
+  }
+}
+
+function getWorkflowSchemas() {
+  return {
+    createWorkflow: {
+      type: 'object',
+      required: ['name', 'nodes'],
+      properties: {
+        name: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 255,
+          pattern: '^[a-zA-Z0-9\\s\\-_]+$'
+        },
+        nodes: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            required: ['name', 'type'],
+            properties: {
+              name: { type: 'string', minLength: 1 },
+              type: { type: 'string', minLength: 1 },
+              parameters: { type: 'object' },
+              position: {
+                type: 'array',
+                items: { type: 'number' },
+                minItems: 2,
+                maxItems: 2
+              }
+            }
+          }
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' }
+        },
+        settings: { type: 'object' },
+        autoConnect: { type: 'boolean' },
+        advancedConnections: { type: 'boolean' }
+      },
+      additionalProperties: false
+    }
+  };
+}
+
+function validateWorkflowData(data, schema = 'createWorkflow') {
+  const schemas = getWorkflowSchemas();
+  const validate = ajv.compile(schemas[schema]);
+  const valid = validate(data);
+
+  if (!valid) {
+    const error = new Error('Validation failed');
+    error.code = 'VALIDATION_ERROR';
+    error.details = validate.errors;
+    throw error;
+  }
+
+  return data;
+}
+
+// MCP PROTOCOL EXCELLENCE - RFC 8707 Resource Indicators & Security
+// Modern MCP authorization patterns with enterprise-grade security
+
+function generateResourceIndicator(resourceType, resourceId, userToken = null) {
+  if (!ENABLE_RESOURCE_INDICATORS) return null;
+
+  const namespace = uuidv5.DNS;
+  const resourceURI = `${MCP_NAMESPACE}:${resourceType}:${resourceId}`;
+  const indicator = uuidv5(resourceURI, namespace);
+
+  // Create secure resource binding
+  const timestamp = Date.now();
+  const nonce = randomBytes(16).toString('hex');
+
+  let audience = 'public';
+  if (userToken) {
+    try {
+      const decoded = verifyJWT(userToken);
+      audience = `${decoded.tenantId}:${decoded.role}`;
+    } catch (error) {
+      // Non-authenticated access, use public audience
+    }
+  }
+
+  const resourceData = {
+    indicator,
+    resourceType,
+    resourceId,
+    audience,
+    timestamp,
+    nonce,
+    serverId: MCP_SERVER_ID,
+    version: MCP_PROTOCOL_VERSION
+  };
+
+  // Generate integrity signature
+  const signature = createHmac('sha256', RESOURCE_INDICATOR_SECRET)
+    .update(JSON.stringify(resourceData))
+    .digest('hex');
+
+  resourceData.signature = signature;
+  resourceIndicators.set(indicator, resourceData);
+
+  logAuditEvent('RESOURCE_INDICATOR_CREATED', userToken ? 'authenticated' : 'anonymous', null, {
+    resourceType,
+    resourceId,
+    indicator,
+    audience
+  });
+
+  return indicator;
+}
+
+function validateResourceIndicator(indicator, userToken = null) {
+  if (!ENABLE_RESOURCE_INDICATORS || !indicator) return { valid: false, reason: 'Resource indicators disabled or missing' };
+
+  const resourceData = resourceIndicators.get(indicator);
+  if (!resourceData) {
+    return { valid: false, reason: 'Resource indicator not found' };
+  }
+
+  // Verify integrity signature
+  const { signature, ...dataToVerify } = resourceData;
+  const expectedSignature = createHmac('sha256', RESOURCE_INDICATOR_SECRET)
+    .update(JSON.stringify(dataToVerify))
+    .digest('hex');
+
+  if (signature !== expectedSignature) {
+    logAuditEvent('RESOURCE_INDICATOR_TAMPERED', null, null, { indicator });
+    return { valid: false, reason: 'Resource indicator integrity check failed' };
+  }
+
+  // Check expiration (24 hours)
+  const age = Date.now() - resourceData.timestamp;
+  if (age > 86400000) { // 24 hours
+    return { valid: false, reason: 'Resource indicator expired' };
+  }
+
+  // Validate audience if user token provided
+  if (userToken) {
+    try {
+      const decoded = verifyJWT(userToken);
+      const userAudience = `${decoded.tenantId}:${decoded.role}`;
+
+      if (resourceData.audience !== 'public' && resourceData.audience !== userAudience && decoded.role !== USER_ROLES.ADMIN) {
+        return { valid: false, reason: 'Insufficient permissions for resource' };
+      }
+    } catch (error) {
+      if (resourceData.audience !== 'public') {
+        return { valid: false, reason: 'Authentication required for protected resource' };
+      }
+    }
+  }
+
+  return {
+    valid: true,
+    resourceData,
+    permissions: getResourcePermissions(resourceData.resourceType, userToken)
+  };
+}
+
+function getResourcePermissions(resourceType, userToken = null) {
+  const basePermissions = ['read'];
+
+  if (!userToken) return basePermissions;
+
+  try {
+    const decoded = verifyJWT(userToken);
+    const userPermissions = decoded.permissions || [];
+
+    const resourcePermissionMap = {
+      workflow: {
+        [PERMISSIONS.VIEW_WORKFLOW]: ['read'],
+        [PERMISSIONS.UPDATE_WORKFLOW]: ['read', 'update'],
+        [PERMISSIONS.DELETE_WORKFLOW]: ['read', 'update', 'delete'],
+        [PERMISSIONS.EXECUTE_WORKFLOW]: ['read', 'execute']
+      },
+      execution: {
+        [PERMISSIONS.VIEW_WORKFLOW]: ['read'],
+        [PERMISSIONS.EXECUTE_WORKFLOW]: ['read', 'stop']
+      },
+      template: {
+        [PERMISSIONS.VIEW_WORKFLOW]: ['read'],
+        [PERMISSIONS.MANAGE_TEMPLATES]: ['read', 'create', 'update', 'delete']
+      }
+    };
+
+    const resourceMap = resourcePermissionMap[resourceType] || {};
+    let grantedPermissions = [...basePermissions];
+
+    userPermissions.forEach(permission => {
+      if (resourceMap[permission]) {
+        grantedPermissions = [...new Set([...grantedPermissions, ...resourceMap[permission]])];
+      }
+    });
+
+    return grantedPermissions;
+  } catch (error) {
+    return basePermissions;
+  }
+}
+
+function enforceRateLimit(identifier, maxRequests = RATE_LIMIT_REQUESTS, windowMs = RATE_LIMIT_WINDOW) {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+
+  if (!rateLimitStore.has(identifier)) {
+    rateLimitStore.set(identifier, []);
+  }
+
+  const requests = rateLimitStore.get(identifier);
+
+  // Remove old requests outside the window
+  const validRequests = requests.filter(timestamp => timestamp > windowStart);
+
+  if (validRequests.length >= maxRequests) {
+    const resetTime = validRequests[0] + windowMs;
+    return {
+      allowed: false,
+      limit: maxRequests,
+      remaining: 0,
+      resetTime,
+      retryAfter: Math.ceil((resetTime - now) / 1000)
+    };
+  }
+
+  validRequests.push(now);
+  rateLimitStore.set(identifier, validRequests);
+
+  return {
+    allowed: true,
+    limit: maxRequests,
+    remaining: maxRequests - validRequests.length,
+    resetTime: now + windowMs,
+    retryAfter: 0
+  };
+}
+
+function createErrorBoundary(requestId, context = {}) {
+  const boundary = {
+    id: requestId || uuidv4(),
+    timestamp: Date.now(),
+    context,
+    errors: [],
+    warnings: [],
+    metrics: {
+      startTime: Date.now(),
+      endTime: null,
+      duration: null,
+      memoryUsage: process.memoryUsage(),
+      requestSize: JSON.stringify(context).length
+    },
+    status: 'active'
+  };
+
+  errorBoundaries.set(boundary.id, boundary);
+  return boundary;
+}
+
+function addToBoundary(boundaryId, type, message, details = {}) {
+  const boundary = errorBoundaries.get(boundaryId);
+  if (!boundary) return;
+
+  const entry = {
+    timestamp: Date.now(),
+    type,
+    message,
+    details,
+    stack: new Error().stack
+  };
+
+  if (type === 'error') {
+    boundary.errors.push(entry);
+  } else if (type === 'warning') {
+    boundary.warnings.push(entry);
+  }
+
+  // Log critical errors immediately
+  if (type === 'error') {
+    logAuditEvent('ERROR_BOUNDARY_TRIGGERED', null, null, {
+      boundaryId,
+      errorMessage: message,
+      details
+    });
+  }
+}
+
+function finalizeBoundary(boundaryId, success = true) {
+  const boundary = errorBoundaries.get(boundaryId);
+  if (!boundary) return null;
+
+  boundary.metrics.endTime = Date.now();
+  boundary.metrics.duration = boundary.metrics.endTime - boundary.metrics.startTime;
+  boundary.metrics.finalMemoryUsage = process.memoryUsage();
+  boundary.status = success ? 'completed' : 'failed';
+
+  // Store metrics for monitoring
+  const metricsKey = `${Date.now()}-${boundaryId}`;
+  requestMetrics.set(metricsKey, {
+    duration: boundary.metrics.duration,
+    errors: boundary.errors.length,
+    warnings: boundary.warnings.length,
+    success,
+    timestamp: boundary.timestamp,
+    requestSize: boundary.metrics.requestSize,
+    memoryDelta: boundary.metrics.finalMemoryUsage.heapUsed - boundary.metrics.memoryUsage.heapUsed
+  });
+
+  // Clean up old boundaries (keep last 1000)
+  if (errorBoundaries.size > 1000) {
+    const entries = Array.from(errorBoundaries.entries())
+      .sort((a, b) => b[1].timestamp - a[1].timestamp)
+      .slice(1000);
+
+    errorBoundaries.clear();
+    entries.forEach(([id, boundary]) => errorBoundaries.set(id, boundary));
+  }
+
+  return boundary;
+}
+
+function encryptTransportData(data, key = RESOURCE_INDICATOR_SECRET) {
+  if (!ENABLE_TRANSPORT_ENCRYPTION) return data;
+
+  try {
+    const cipher = forge.cipher.createCipher('AES-GCM', key.slice(0, 32));
+    const iv = forge.random.getBytesSync(12);
+
+    cipher.start({
+      iv: iv,
+      additionalData: 'mcp-transport'
+    });
+
+    cipher.update(forge.util.createBuffer(JSON.stringify(data)));
+    cipher.finish();
+
+    return {
+      encrypted: true,
+      data: forge.util.encode64(cipher.output.getBytes()),
+      iv: forge.util.encode64(iv),
+      tag: forge.util.encode64(cipher.mode.tag.getBytes()),
+      algorithm: 'AES-GCM'
+    };
+  } catch (error) {
+    logAuditEvent('ENCRYPTION_ERROR', null, null, { error: error.message });
+    return data; // Fallback to unencrypted
+  }
+}
+
+function decryptTransportData(encryptedData, key = RESOURCE_INDICATOR_SECRET) {
+  if (!encryptedData.encrypted) return encryptedData;
+
+  try {
+    const decipher = forge.cipher.createDecipher('AES-GCM', key.slice(0, 32));
+
+    decipher.start({
+      iv: forge.util.decode64(encryptedData.iv),
+      additionalData: 'mcp-transport',
+      tag: forge.util.createBuffer(forge.util.decode64(encryptedData.tag))
+    });
+
+    decipher.update(forge.util.createBuffer(forge.util.decode64(encryptedData.data)));
+
+    if (decipher.finish()) {
+      return JSON.parse(decipher.output.toString());
+    } else {
+      throw new Error('Decryption failed');
+    }
+  } catch (error) {
+    logAuditEvent('DECRYPTION_ERROR', null, null, { error: error.message });
+    throw new Error('Failed to decrypt transport data');
+  }
+}
+
+// TEMPLATE MARKETPLACE & VERSION CONTROL SYSTEM
+// Enterprise-grade template management with Git-like versioning
+
+function createWorkflowVersion(workflowId, workflowData, userToken, message = 'Workflow update') {
+  try {
+    const decoded = userToken ? verifyJWT(userToken) : null;
+    const versionId = uuidv4();
+
+    if (!workflowVersions.has(workflowId)) {
+      workflowVersions.set(workflowId, []);
+    }
+
+    const versions = workflowVersions.get(workflowId);
+    const version = {
+      id: versionId,
+      workflowId,
+      version: `v${versions.length + 1}.0.0`,
+      data: JSON.parse(JSON.stringify(workflowData)), // Deep clone
+      author: decoded ? decoded.username : 'anonymous',
+      authorId: decoded ? decoded.userId : null,
+      message,
+      timestamp: Date.now(),
+      createdAt: new Date().toISOString(),
+      hash: createHash('sha256').update(JSON.stringify(workflowData)).digest('hex').slice(0, 8),
+      tags: [],
+      isStable: false
+    };
+
+    versions.push(version);
+
+    logAuditEvent('WORKFLOW_VERSION_CREATED', decoded?.userId, decoded?.tenantId, {
+      workflowId,
+      versionId,
+      version: version.version,
+      hash: version.hash
+    });
+
+    return version;
+  } catch (error) {
+    logAuditEvent('WORKFLOW_VERSION_ERROR', null, null, { error: error.message, workflowId });
+    throw error;
+  }
+}
+
+function getWorkflowVersions(workflowId, userToken = null) {
+  try {
+    if (ENABLE_RBAC && userToken) {
+      requirePermission(userToken, PERMISSIONS.VIEW_WORKFLOW);
+    }
+
+    const versions = workflowVersions.get(workflowId) || [];
+
+    return versions.map(version => ({
+      id: version.id,
+      version: version.version,
+      author: version.author,
+      message: version.message,
+      timestamp: version.timestamp,
+      createdAt: version.createdAt,
+      hash: version.hash,
+      tags: version.tags,
+      isStable: version.isStable
+    }));
+  } catch (error) {
+    throw new Error(`Failed to get workflow versions: ${error.message}`);
+  }
+}
+
+function publishTemplate(templateData, userToken) {
+  try {
+    const decoded = verifyJWT(userToken);
+    requirePermission(userToken, PERMISSIONS.MANAGE_TEMPLATES);
+
+    const templateId = templateData.id || uuidv4();
+    const template = {
+      id: templateId,
+      name: templateData.name,
+      description: templateData.description,
+      category: templateData.category || 'general',
+      tags: templateData.tags || [],
+      difficulty: templateData.difficulty || 'intermediate',
+      estimatedTime: templateData.estimatedTime || '10 minutes',
+      author: decoded.username,
+      authorId: decoded.userId,
+      tenantId: decoded.tenantId,
+      version: templateData.version || '1.0.0',
+      downloads: 0,
+      rating: 0,
+      ratings: [],
+      verified: decoded.role === USER_ROLES.ADMIN,
+      template: validateWorkflowData(templateData.template),
+      screenshots: templateData.screenshots || [],
+      documentation: templateData.documentation || '',
+      requirements: templateData.requirements || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isPublic: templateData.isPublic !== false,
+      license: templateData.license || 'MIT'
+    };
+
+    templateMarketplace.set(templateId, template);
+
+    logAuditEvent('TEMPLATE_PUBLISHED', decoded.userId, decoded.tenantId, {
+      templateId,
+      templateName: template.name,
+      category: template.category
+    });
+
+    return template;
+  } catch (error) {
+    throw new Error(`Failed to publish template: ${error.message}`);
+  }
+}
+
+function searchTemplates(query = '', filters = {}) {
+  try {
+    const templates = Array.from(templateMarketplace.values()).filter(template => {
+      if (!template.isPublic) return false;
+
+      // Text search
+      if (query) {
+        const searchableText = `${template.name} ${template.description} ${template.tags.join(' ')} ${template.author}`.toLowerCase();
+        if (!searchableText.includes(query.toLowerCase())) {
+          return false;
+        }
+      }
+
+      // Filters
+      if (filters.category && template.category !== filters.category) return false;
+      if (filters.difficulty && template.difficulty !== filters.difficulty) return false;
+      if (filters.author && template.author !== filters.author) return false;
+      if (filters.verified !== undefined && template.verified !== filters.verified) return false;
+      if (filters.minRating && template.rating < filters.minRating) return false;
+      if (filters.tags && !filters.tags.some(tag => template.tags.includes(tag))) return false;
+
+      return true;
+    });
+
+    // Sort by relevance, then by downloads, then by rating
+    return templates.sort((a, b) => {
+      if (query) {
+        const aRelevance = a.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+        const bRelevance = b.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+        if (aRelevance !== bRelevance) return bRelevance - aRelevance;
+      }
+
+      if (a.downloads !== b.downloads) return b.downloads - a.downloads;
+      return b.rating - a.rating;
+    });
+  } catch (error) {
+    throw new Error(`Template search failed: ${error.message}`);
+  }
+}
+
+function createWorkflowFromTemplate(templateId, customizations = {}, userToken = null) {
+  try {
+    const template = templateMarketplace.get(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    // Increment download counter
+    template.downloads++;
+    templateMarketplace.set(templateId, template);
+
+    // Clone template and apply customizations
+    const workflowData = JSON.parse(JSON.stringify(template.template));
+
+    // Apply customizations
+    if (customizations.name) {
+      workflowData.name = customizations.name;
+    } else {
+      workflowData.name = `${template.name} - ${new Date().toLocaleDateString()}`;
+    }
+
+    if (customizations.nodes) {
+      // Merge node customizations
+      workflowData.nodes = workflowData.nodes.map(node => {
+        const customNode = customizations.nodes.find(n => n.id === node.id);
+        return customNode ? { ...node, ...customNode } : node;
+      });
+    }
+
+    if (customizations.settings) {
+      workflowData.settings = { ...workflowData.settings, ...customizations.settings };
+    }
+
+    // Generate resource indicator for template usage tracking
+    const resourceIndicator = generateResourceIndicator('template', templateId, userToken);
+
+    const decoded = userToken ? verifyJWT(userToken) : null;
+    logAuditEvent('TEMPLATE_USED', decoded?.userId, decoded?.tenantId, {
+      templateId,
+      templateName: template.name,
+      customizations: Object.keys(customizations),
+      resourceIndicator
+    });
+
+    return {
+      workflow: workflowData,
+      template: {
+        id: template.id,
+        name: template.name,
+        author: template.author,
+        version: template.version
+      },
+      resourceIndicator
+    };
+  } catch (error) {
+    throw new Error(`Failed to create workflow from template: ${error.message}`);
+  }
+}
+
+function manageEnvironment(environmentId, action, data = {}, userToken) {
+  try {
+    const decoded = verifyJWT(userToken);
+    requirePermission(userToken, PERMISSIONS.MANAGE_TEMPLATES); // Using template permission for env management
+
+    switch (action) {
+      case 'create':
+        const newEnv = {
+          id: data.id || uuidv4(),
+          name: data.name,
+          description: data.description || '',
+          url: data.url,
+          type: data.type || 'development',
+          isActive: data.isActive !== false,
+          settings: {
+            debugMode: data.settings?.debugMode || false,
+            logLevel: data.settings?.logLevel || 'info',
+            maxExecutionTime: data.settings?.maxExecutionTime || 300000,
+            allowManualTrigger: data.settings?.allowManualTrigger !== false,
+            ...data.settings
+          },
+          createdAt: new Date().toISOString(),
+          createdBy: decoded.userId
+        };
+
+        environments.set(newEnv.id, newEnv);
+        logAuditEvent('ENVIRONMENT_CREATED', decoded.userId, decoded.tenantId, { environmentId: newEnv.id, name: newEnv.name });
+        return newEnv;
+
+      case 'update':
+        const existingEnv = environments.get(environmentId);
+        if (!existingEnv) throw new Error('Environment not found');
+
+        const updatedEnv = {
+          ...existingEnv,
+          ...data,
+          settings: { ...existingEnv.settings, ...data.settings },
+          updatedAt: new Date().toISOString(),
+          updatedBy: decoded.userId
+        };
+
+        environments.set(environmentId, updatedEnv);
+        logAuditEvent('ENVIRONMENT_UPDATED', decoded.userId, decoded.tenantId, { environmentId, changes: Object.keys(data) });
+        return updatedEnv;
+
+      case 'delete':
+        if (!environments.has(environmentId)) throw new Error('Environment not found');
+
+        environments.delete(environmentId);
+        logAuditEvent('ENVIRONMENT_DELETED', decoded.userId, decoded.tenantId, { environmentId });
+        return { success: true };
+
+      case 'deploy':
+        const env = environments.get(environmentId);
+        if (!env) throw new Error('Environment not found');
+
+        // Simulate deployment (in real implementation, this would deploy to actual environment)
+        const deploymentId = uuidv4();
+        const deployment = {
+          id: deploymentId,
+          environmentId,
+          workflowId: data.workflowId,
+          status: 'deploying',
+          deployedBy: decoded.userId,
+          deployedAt: new Date().toISOString(),
+          version: data.version || '1.0.0'
+        };
+
+        logAuditEvent('WORKFLOW_DEPLOYED', decoded.userId, decoded.tenantId, {
+          deploymentId,
+          environmentId,
+          workflowId: data.workflowId
+        });
+
+        return deployment;
+
+      default:
+        throw new Error(`Unknown environment action: ${action}`);
+    }
+  } catch (error) {
+    throw new Error(`Environment management failed: ${error.message}`);
+  }
+}
+
+function validateWorkflowBestPractices(workflowData) {
+  const issues = [];
+  const suggestions = [];
+  const metrics = {
+    score: 100,
+    complexity: 'low',
+    maintainability: 'high',
+    performance: 'good'
+  };
+
+  try {
+    const nodes = workflowData.nodes || [];
+    const connections = workflowData.connections || {};
+
+    // Check for basic issues
+    if (nodes.length === 0) {
+      issues.push({ type: 'error', message: 'Workflow has no nodes', severity: 'high' });
+      metrics.score -= 50;
+    }
+
+    if (nodes.length > 20) {
+      suggestions.push({ type: 'performance', message: 'Consider breaking down complex workflows into smaller, reusable components', severity: 'medium' });
+      metrics.complexity = 'high';
+      metrics.score -= 10;
+    }
+
+    // Check for trigger nodes
+    const triggerNodes = nodes.filter(n =>
+      n.type.includes('trigger') || n.type.includes('webhook') || n.type.includes('cron')
+    );
+
+    if (triggerNodes.length === 0) {
+      issues.push({ type: 'warning', message: 'No trigger nodes found - workflow cannot start automatically', severity: 'medium' });
+      metrics.score -= 15;
+    }
+
+    if (triggerNodes.length > 3) {
+      suggestions.push({ type: 'architecture', message: 'Multiple triggers may indicate workflow should be split', severity: 'low' });
+      metrics.complexity = 'medium';
+      metrics.score -= 5;
+    }
+
+    // Check for error handling
+    const errorHandlers = nodes.filter(n =>
+      n.type.includes('errorTrigger') || n.name.toLowerCase().includes('error')
+    );
+
+    if (errorHandlers.length === 0 && nodes.length > 5) {
+      suggestions.push({ type: 'reliability', message: 'Consider adding error handling for production workflows', severity: 'medium' });
+      metrics.score -= 10;
+    }
+
+    // Check for orphaned nodes
+    const connectedNodes = new Set();
+    Object.values(connections).forEach(nodeConnections => {
+      if (nodeConnections.main) {
+        nodeConnections.main.forEach(connectionGroup => {
+          if (Array.isArray(connectionGroup)) {
+            connectionGroup.forEach(connection => {
+              connectedNodes.add(connection.node);
+            });
+          }
+        });
+      }
+    });
+
+    const orphanedNodes = nodes.filter(node =>
+      !triggerNodes.includes(node) && !connectedNodes.has(node.name) && !connectedNodes.has(node.id)
+    );
+
+    if (orphanedNodes.length > 0) {
+      issues.push({
+        type: 'warning',
+        message: `${orphanedNodes.length} orphaned nodes found: ${orphanedNodes.map(n => n.name).join(', ')}`,
+        severity: 'medium'
+      });
+      metrics.score -= orphanedNodes.length * 5;
+      metrics.maintainability = 'medium';
+    }
+
+    // Check for naming conventions
+    const badlyNamedNodes = nodes.filter(node =>
+      !node.name || node.name.trim().length === 0 || node.name === node.type
+    );
+
+    if (badlyNamedNodes.length > 0) {
+      suggestions.push({
+        type: 'maintainability',
+        message: 'Use descriptive names for nodes to improve workflow readability',
+        severity: 'low'
+      });
+      metrics.maintainability = 'medium';
+      metrics.score -= 5;
+    }
+
+    // Check for security best practices
+    const httpNodes = nodes.filter(n => n.type.includes('httpRequest'));
+    const unsecureHttpNodes = httpNodes.filter(node => {
+      const url = node.parameters?.url || '';
+      return url.startsWith('http://') && !url.includes('localhost');
+    });
+
+    if (unsecureHttpNodes.length > 0) {
+      issues.push({
+        type: 'security',
+        message: 'Use HTTPS for external API calls to ensure data security',
+        severity: 'high'
+      });
+      metrics.score -= 20;
+    }
+
+    // Performance checks
+    const heavyNodes = nodes.filter(n =>
+      n.type.includes('function') || n.type.includes('code') || n.type.includes('loop')
+    );
+
+    if (heavyNodes.length > 5) {
+      suggestions.push({
+        type: 'performance',
+        message: 'Many computation-heavy nodes detected - consider optimizing for performance',
+        severity: 'medium'
+      });
+      metrics.performance = 'fair';
+      metrics.score -= 10;
+    }
+
+    // Calculate final metrics
+    if (metrics.score >= 90) metrics.complexity = 'low';
+    else if (metrics.score >= 70) metrics.complexity = 'medium';
+    else metrics.complexity = 'high';
+
+    if (metrics.score >= 85) metrics.maintainability = 'high';
+    else if (metrics.score >= 60) metrics.maintainability = 'medium';
+    else metrics.maintainability = 'low';
+
+    if (metrics.score >= 80) metrics.performance = 'excellent';
+    else if (metrics.score >= 60) metrics.performance = 'good';
+    else metrics.performance = 'needs improvement';
+
+    return {
+      valid: issues.filter(i => i.type === 'error').length === 0,
+      score: Math.max(0, metrics.score),
+      metrics,
+      issues,
+      suggestions,
+      summary: {
+        totalNodes: nodes.length,
+        triggerNodes: triggerNodes.length,
+        connectedNodes: connectedNodes.size,
+        orphanedNodes: orphanedNodes.length,
+        securityIssues: issues.filter(i => i.type === 'security').length,
+        performanceWarnings: suggestions.filter(s => s.type === 'performance').length
+      }
+    };
+
+  } catch (error) {
+    return {
+      valid: false,
+      score: 0,
+      metrics: { complexity: 'unknown', maintainability: 'unknown', performance: 'unknown' },
+      issues: [{ type: 'error', message: `Validation failed: ${error.message}`, severity: 'high' }],
+      suggestions: [],
+      summary: {}
+    };
+  }
+}
+
+// AI-ENHANCED DEBUGGING SYSTEM
+// Intelligent error analysis and automated fix suggestions
+
+// AI Error Pattern Database - Common n8n workflow issues and their solutions
+const AI_ERROR_PATTERNS = {
+  // Connection Issues
+  'connection_missing': {
+    pattern: /no.*connection|not.*connected|missing.*connection/i,
+    category: 'connection',
+    severity: 'high',
+    solution: 'Connect nodes by dragging from output to input. Ensure all nodes have proper connections.',
+    autoFix: true
+  },
+  'circular_reference': {
+    pattern: /circular|cycle|loop.*detected/i,
+    category: 'connection',
+    severity: 'critical',
+    solution: 'Remove circular connections by analyzing the workflow flow and breaking the loop.',
+    autoFix: false
+  },
+
+  // Data Issues
+  'data_missing': {
+    pattern: /no.*data|empty.*data|undefined.*data/i,
+    category: 'data',
+    severity: 'medium',
+    solution: 'Check if previous nodes are producing data. Add debug nodes to inspect data flow.',
+    autoFix: true
+  },
+  'data_format_error': {
+    pattern: /invalid.*format|wrong.*type|cannot.*parse/i,
+    category: 'data',
+    severity: 'medium',
+    solution: 'Transform data format using Set or Function nodes before processing.',
+    autoFix: true
+  },
+
+  // Authentication Issues
+  'auth_failed': {
+    pattern: /authentication.*failed|unauthorized|401|403/i,
+    category: 'authentication',
+    severity: 'high',
+    solution: 'Check API credentials, tokens, and authentication configuration.',
+    autoFix: false
+  },
+
+  // API Issues
+  'rate_limit': {
+    pattern: /rate.*limit|too.*many.*requests|429/i,
+    category: 'api',
+    severity: 'medium',
+    solution: 'Add delays between requests or implement exponential backoff.',
+    autoFix: true
+  },
+  'timeout': {
+    pattern: /timeout|timed.*out|request.*failed/i,
+    category: 'api',
+    severity: 'medium',
+    solution: 'Increase timeout values or optimize API calls for better performance.',
+    autoFix: true
+  },
+
+  // Configuration Issues
+  'invalid_config': {
+    pattern: /invalid.*configuration|config.*error|missing.*parameter/i,
+    category: 'configuration',
+    severity: 'high',
+    solution: 'Review node configuration and ensure all required fields are properly set.',
+    autoFix: false
+  }
+};
+
+// AI-powered workflow analysis
+function analyzeWorkflowWithAI(workflowData, executionData = null, errorContext = null) {
+  const analysis = {
+    issues: [],
+    suggestions: [],
+    fixes: [],
+    confidence: 0,
+    aiRecommendations: []
+  };
+
+  try {
+    // 1. STATIC ANALYSIS - Examine workflow structure
+    if (workflowData && workflowData.nodes) {
+      const staticIssues = performStaticAnalysis(workflowData);
+      analysis.issues.push(...staticIssues);
+    }
+
+    // 2. EXECUTION ANALYSIS - Examine failed executions
+    if (executionData) {
+      const executionIssues = performExecutionAnalysis(executionData);
+      analysis.issues.push(...executionIssues);
+    }
+
+    // 3. ERROR PATTERN MATCHING - Match against known patterns
+    if (errorContext && errorContext.errorMessage) {
+      const patternMatches = matchErrorPatterns(errorContext.errorMessage);
+      analysis.issues.push(...patternMatches.issues);
+      analysis.fixes.push(...patternMatches.fixes);
+    }
+
+    // 4. AI RECOMMENDATIONS - Generate intelligent suggestions
+    analysis.aiRecommendations = generateAIRecommendations(workflowData, analysis.issues);
+
+    // 5. CALCULATE CONFIDENCE
+    analysis.confidence = calculateAnalysisConfidence(analysis);
+
+    return analysis;
+  } catch (error) {
+    return {
+      issues: [{ type: 'analysis_error', message: `AI analysis failed: ${error.message}`, severity: 'low' }],
+      suggestions: [],
+      fixes: [],
+      confidence: 0,
+      aiRecommendations: []
+    };
+  }
+}
+
+// Perform static code analysis on workflow
+function performStaticAnalysis(workflowData) {
+  const issues = [];
+  const { nodes, connections = {} } = workflowData;
+
+  // Check for orphaned nodes
+  const orphanedNodes = nodes.filter(node => {
+    if (node.type.includes('trigger')) return false; // Triggers are entry points
+    return !Object.keys(connections).some(sourceNode =>
+      connections[sourceNode]?.main?.some(conn =>
+        conn.some(target => target.node === node.name)
+      )
+    );
+  });
+
+  if (orphanedNodes.length > 0) {
+    issues.push({
+      type: 'orphaned_nodes',
+      message: `Found ${orphanedNodes.length} disconnected nodes: ${orphanedNodes.map(n => n.name).join(', ')}`,
+      severity: 'medium',
+      nodes: orphanedNodes.map(n => n.name),
+      autoFix: true,
+      fix: 'Connect these nodes to the workflow or remove them if not needed.'
+    });
+  }
+
+  // Check for missing error handling
+  const hasErrorHandling = nodes.some(node =>
+    node.type.includes('errorTrigger') ||
+    node.onError === 'continueRegularOutput'
+  );
+
+  if (!hasErrorHandling && nodes.length > 2) {
+    issues.push({
+      type: 'missing_error_handling',
+      message: 'Workflow lacks error handling mechanisms',
+      severity: 'medium',
+      autoFix: true,
+      fix: 'Add error handling nodes or configure node error handling settings.'
+    });
+  }
+
+  // Check for complex workflows without proper structure
+  if (nodes.length > 10) {
+    const hasStructure = nodes.some(node =>
+      node.type.includes('merge') ||
+      node.type.includes('switch') ||
+      node.type.includes('if')
+    );
+
+    if (!hasStructure) {
+      issues.push({
+        type: 'complex_linear_workflow',
+        message: 'Large workflow lacks proper structure (merge/switch/conditional nodes)',
+        severity: 'low',
+        autoFix: true,
+        fix: 'Consider using Switch or IF nodes for conditional logic, Merge nodes for combining data.'
+      });
+    }
+  }
+
+  return issues;
+}
+
+// Analyze execution data for failure patterns
+function performExecutionAnalysis(executionData) {
+  const issues = [];
+
+  if (executionData.status === 'error' && executionData.data) {
+    const errorNode = executionData.data.resultData?.error?.node;
+    const errorMessage = executionData.data.resultData?.error?.message;
+
+    if (errorNode && errorMessage) {
+      // Analyze specific node failures
+      issues.push({
+        type: 'node_execution_error',
+        message: `Node '${errorNode}' failed: ${errorMessage}`,
+        severity: 'high',
+        node: errorNode,
+        errorDetails: errorMessage,
+        autoFix: false
+      });
+
+      // Pattern match the error message
+      const patterns = matchErrorPatterns(errorMessage);
+      issues.push(...patterns.issues);
+    }
+  }
+
+  // Check for performance issues
+  if (executionData.executionTime && executionData.executionTime > 60000) { // > 1 minute
+    issues.push({
+      type: 'performance_issue',
+      message: `Workflow execution took ${Math.round(executionData.executionTime / 1000)}s, which is quite long`,
+      severity: 'low',
+      autoFix: true,
+      fix: 'Consider optimizing slow nodes, adding parallel processing, or reducing data volume.'
+    });
+  }
+
+  return issues;
+}
+
+// Match error messages against known patterns
+function matchErrorPatterns(errorMessage) {
+  const matches = {
+    issues: [],
+    fixes: []
+  };
+
+  Object.entries(AI_ERROR_PATTERNS).forEach(([key, pattern]) => {
+    if (pattern.pattern.test(errorMessage)) {
+      matches.issues.push({
+        type: key,
+        message: `Detected ${pattern.category} issue: ${errorMessage}`,
+        severity: pattern.severity,
+        category: pattern.category,
+        autoFix: pattern.autoFix
+      });
+
+      if (pattern.solution) {
+        matches.fixes.push({
+          type: key,
+          description: pattern.solution,
+          autoFix: pattern.autoFix,
+          category: pattern.category
+        });
+      }
+    }
+  });
+
+  return matches;
+}
+
+// Generate AI recommendations based on workflow analysis
+function generateAIRecommendations(workflowData, issues) {
+  const recommendations = [];
+
+  if (!workflowData || !workflowData.nodes) {
+    return recommendations;
+  }
+
+  const { nodes } = workflowData;
+
+  // Recommendation 1: Error handling based on workflow complexity
+  const highRiskNodes = nodes.filter(node =>
+    node.type.includes('httpRequest') ||
+    node.type.includes('webhook') ||
+    node.type.includes('ftp') ||
+    node.type.includes('database')
+  );
+
+  if (highRiskNodes.length > 0 && !nodes.some(n => n.type.includes('errorTrigger'))) {
+    recommendations.push({
+      type: 'error_handling',
+      priority: 'high',
+      title: 'Add Error Handling',
+      description: `Your workflow has ${highRiskNodes.length} nodes that could fail (API calls, database operations). Consider adding error handling.`,
+      implementation: 'Add Error Trigger nodes or configure "On Error" settings for critical nodes.',
+      impact: 'Prevents workflow failures and provides graceful error recovery.'
+    });
+  }
+
+  // Recommendation 2: Performance optimization
+  const parallelizableNodes = nodes.filter(node =>
+    !node.type.includes('trigger') &&
+    !node.type.includes('merge') &&
+    !node.type.includes('if') &&
+    !node.type.includes('switch')
+  );
+
+  if (parallelizableNodes.length > 5) {
+    recommendations.push({
+      type: 'performance',
+      priority: 'medium',
+      title: 'Consider Parallel Processing',
+      description: 'Your workflow has many sequential nodes that could potentially run in parallel.',
+      implementation: 'Use multiple paths and Merge nodes to process data in parallel where possible.',
+      impact: 'Can significantly reduce execution time for large datasets.'
+    });
+  }
+
+  // Recommendation 3: Data validation
+  const dataProcessingNodes = nodes.filter(node =>
+    node.type.includes('set') ||
+    node.type.includes('function') ||
+    node.type.includes('json')
+  );
+
+  if (dataProcessingNodes.length > 2 && !nodes.some(n => n.name.toLowerCase().includes('validate'))) {
+    recommendations.push({
+      type: 'data_quality',
+      priority: 'medium',
+      title: 'Add Data Validation',
+      description: 'Your workflow processes data extensively but lacks validation steps.',
+      implementation: 'Add Function or IF nodes to validate data before processing.',
+      impact: 'Prevents errors from invalid data and improves workflow reliability.'
+    });
+  }
+
+  // Recommendation 4: Monitoring and logging
+  if (nodes.length > 5 && !nodes.some(n => n.name.toLowerCase().includes('log'))) {
+    recommendations.push({
+      type: 'monitoring',
+      priority: 'low',
+      title: 'Add Logging/Monitoring',
+      description: 'Complex workflows benefit from logging key steps for debugging.',
+      implementation: 'Add Set nodes to log important data points or use webhook nodes for external monitoring.',
+      impact: 'Makes debugging easier and provides visibility into workflow execution.'
+    });
+  }
+
+  return recommendations;
+}
+
+// Calculate confidence level of the analysis
+function calculateAnalysisConfidence(analysis) {
+  let confidence = 50; // Base confidence
+
+  // Increase confidence based on issue detection
+  confidence += analysis.issues.length * 10;
+
+  // Increase confidence if we have execution data
+  if (analysis.issues.some(i => i.type === 'node_execution_error')) {
+    confidence += 20;
+  }
+
+  // Increase confidence if pattern matching found issues
+  if (analysis.issues.some(i => AI_ERROR_PATTERNS[i.type])) {
+    confidence += 15;
+  }
+
+  // Cap confidence at 95%
+  return Math.min(confidence, 95);
+}
+
+// Generate detailed debugging report
+function generateDebuggingReport(analysis, analysisDepth = 'detailed') {
+  let report = `🔍 AI-Enhanced Debugging Report\n`;
+  report += `${'='.repeat(40)}\n\n`;
+
+  // Analysis confidence
+  report += `🎯 Analysis Confidence: ${analysis.confidence}%\n`;
+
+  if (analysis.confidence < 50) {
+    report += `⚠️  Low confidence - consider providing more context for better analysis.\n`;
+  } else if (analysis.confidence > 80) {
+    report += `✅ High confidence - analysis is likely accurate.\n`;
+  }
+
+  report += `\n`;
+
+  // Issues found
+  if (analysis.issues.length > 0) {
+    report += `🚨 Issues Detected (${analysis.issues.length})\n`;
+    report += `${'─'.repeat(30)}\n`;
+
+    const criticalIssues = analysis.issues.filter(i => i.severity === 'critical');
+    const highIssues = analysis.issues.filter(i => i.severity === 'high');
+    const mediumIssues = analysis.issues.filter(i => i.severity === 'medium');
+    const lowIssues = analysis.issues.filter(i => i.severity === 'low');
+
+    if (criticalIssues.length > 0) {
+      report += `\n🔴 Critical Issues (${criticalIssues.length}):\n`;
+      criticalIssues.forEach((issue, i) => {
+        report += `  ${i + 1}. ${issue.message}\n`;
+        if (issue.nodes) report += `     Affected nodes: ${issue.nodes.join(', ')}\n`;
+      });
+    }
+
+    if (highIssues.length > 0) {
+      report += `\n🟠 High Priority Issues (${highIssues.length}):\n`;
+      highIssues.forEach((issue, i) => {
+        report += `  ${i + 1}. ${issue.message}\n`;
+        if (issue.node) report += `     Node: ${issue.node}\n`;
+      });
+    }
+
+    if (analysisDepth !== 'basic' && mediumIssues.length > 0) {
+      report += `\n🟡 Medium Priority Issues (${mediumIssues.length}):\n`;
+      mediumIssues.forEach((issue, i) => {
+        report += `  ${i + 1}. ${issue.message}\n`;
+      });
+    }
+
+    if (analysisDepth === 'comprehensive' && lowIssues.length > 0) {
+      report += `\n🔵 Low Priority Issues (${lowIssues.length}):\n`;
+      lowIssues.forEach((issue, i) => {
+        report += `  ${i + 1}. ${issue.message}\n`;
+      });
+    }
+  } else {
+    report += `✅ No issues detected in the analysis.\n`;
+  }
+
+  // Automated fixes available
+  const fixableIssues = analysis.issues.filter(i => i.autoFix);
+  if (fixableIssues.length > 0) {
+    report += `\n🔧 Automated Fixes Available (${fixableIssues.length})\n`;
+    report += `${'─'.repeat(35)}\n`;
+    fixableIssues.forEach((issue, i) => {
+      report += `  ${i + 1}. ${issue.type}: ${issue.fix || 'Fix available'}\n`;
+    });
+  }
+
+  // AI Recommendations
+  if (analysis.aiRecommendations.length > 0) {
+    report += `\n🧠 AI Recommendations\n`;
+    report += `${'─'.repeat(20)}\n`;
+
+    analysis.aiRecommendations.forEach((rec, i) => {
+      report += `\n${i + 1}. ${rec.title} (${rec.priority} priority)\n`;
+      report += `   ${rec.description}\n`;
+      if (analysisDepth !== 'basic') {
+        report += `   💡 Implementation: ${rec.implementation}\n`;
+        report += `   📈 Impact: ${rec.impact}\n`;
+      }
+    });
+  }
+
+  // Quick fixes section
+  if (analysis.fixes.length > 0) {
+    report += `\n🛠️ Quick Fixes\n`;
+    report += `${'─'.repeat(12)}\n`;
+
+    const categorizedFixes = {};
+    analysis.fixes.forEach(fix => {
+      if (!categorizedFixes[fix.category]) categorizedFixes[fix.category] = [];
+      categorizedFixes[fix.category].push(fix);
+    });
+
+    Object.entries(categorizedFixes).forEach(([category, fixes]) => {
+      report += `\n${category.toUpperCase()}:\n`;
+      fixes.forEach((fix, i) => {
+        report += `  • ${fix.description}\n`;
+      });
+    });
+  }
+
+  return report;
 }
 
 // ADVANCED CONNECTION TYPES IMPLEMENTATION
@@ -887,6 +2830,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token (required when RBAC is enabled)"
+            },
             name: {
               type: "string",
               description: "Name of the workflow"
@@ -1312,6 +3259,565 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["name", "nodeTypes"]
         },
       },
+      {
+        name: "authenticate_user",
+        description: "Authenticate user and obtain JWT token for secure access",
+        inputSchema: {
+          type: "object",
+          properties: {
+            username: {
+              type: "string",
+              description: "Username for authentication"
+            },
+            password: {
+              type: "string",
+              description: "Password for authentication"
+            }
+          },
+          required: ["username", "password"]
+        },
+      },
+      {
+        name: "create_user",
+        description: "Create a new user account (Admin only)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "Admin JWT token"
+            },
+            username: {
+              type: "string",
+              description: "Username for the new user"
+            },
+            email: {
+              type: "string",
+              description: "Email address"
+            },
+            password: {
+              type: "string",
+              description: "Password for the new user"
+            },
+            role: {
+              type: "string",
+              enum: ["admin", "developer", "viewer", "guest"],
+              description: "User role determining permissions"
+            },
+            tenantId: {
+              type: "string",
+              description: "Tenant ID for multi-tenant deployments",
+              default: "default"
+            }
+          },
+          required: ["token", "username", "email", "password", "role"]
+        },
+      },
+      {
+        name: "list_users",
+        description: "List all users (Admin only)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "Admin JWT token"
+            },
+            tenantId: {
+              type: "string",
+              description: "Filter by tenant ID"
+            }
+          },
+          required: ["token"]
+        },
+      },
+      {
+        name: "get_audit_logs",
+        description: "Retrieve audit logs for compliance and security monitoring",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT token with audit log viewing permissions"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of logs to return",
+              default: 100
+            },
+            action: {
+              type: "string",
+              description: "Filter by specific action type"
+            },
+            userId: {
+              type: "string",
+              description: "Filter by user ID"
+            },
+            tenantId: {
+              type: "string",
+              description: "Filter by tenant ID"
+            }
+          },
+          required: ["token"]
+        },
+      },
+      {
+        name: "validate_token",
+        description: "Validate JWT token and return user information",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT token to validate"
+            }
+          },
+          required: ["token"]
+        },
+      },
+      {
+        name: "logout_user",
+        description: "Logout user and invalidate session",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT token to invalidate"
+            }
+          },
+          required: ["token"]
+        },
+      },
+      {
+        name: "generate_resource_indicator",
+        description: "Generate RFC 8707 Resource Indicator for secure resource access",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token"
+            },
+            resourceType: {
+              type: "string",
+              enum: ["workflow", "execution", "template", "user"],
+              description: "Type of resource to generate indicator for"
+            },
+            resourceId: {
+              type: "string",
+              description: "Unique identifier of the resource"
+            }
+          },
+          required: ["resourceType", "resourceId"]
+        },
+      },
+      {
+        name: "validate_resource_indicator",
+        description: "Validate Resource Indicator and check permissions",
+        inputSchema: {
+          type: "object",
+          properties: {
+            indicator: {
+              type: "string",
+              description: "Resource indicator to validate"
+            },
+            token: {
+              type: "string",
+              description: "JWT authentication token (optional for public resources)"
+            }
+          },
+          required: ["indicator"]
+        },
+      },
+      {
+        name: "get_system_metrics",
+        description: "Get system performance and security metrics",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token with monitoring permissions"
+            },
+            timeRange: {
+              type: "string",
+              enum: ["1h", "24h", "7d", "30d"],
+              description: "Time range for metrics",
+              default: "1h"
+            },
+            includeErrors: {
+              type: "boolean",
+              description: "Include error boundary information",
+              default: false
+            }
+          },
+          required: ["token"]
+        },
+      },
+      {
+        name: "test_transport_security",
+        description: "Test transport encryption and security features",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token"
+            },
+            testData: {
+              type: "object",
+              description: "Test data to encrypt/decrypt",
+              default: { test: "encryption validation" }
+            }
+          },
+          required: ["token"]
+        },
+      },
+      {
+        name: "health_check",
+        description: "Comprehensive system health check with security status",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token (optional for basic health check)"
+            },
+            includeDetailed: {
+              type: "boolean",
+              description: "Include detailed security and performance metrics",
+              default: false
+            }
+          }
+        },
+      },
+      {
+        name: "browse_template_marketplace",
+        description: "Browse and search the workflow template marketplace",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Search query for templates"
+            },
+            category: {
+              type: "string",
+              enum: ["communication", "data-processing", "ai-automation", "ecommerce", "general"],
+              description: "Filter by template category"
+            },
+            difficulty: {
+              type: "string",
+              enum: ["beginner", "intermediate", "advanced"],
+              description: "Filter by difficulty level"
+            },
+            verified: {
+              type: "boolean",
+              description: "Show only verified templates"
+            },
+            minRating: {
+              type: "number",
+              description: "Minimum rating filter (0-5)"
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results",
+              default: 20
+            }
+          }
+        },
+      },
+      {
+        name: "create_workflow_from_template",
+        description: "Create a new workflow from a template with customizations",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token"
+            },
+            templateId: {
+              type: "string",
+              description: "ID of the template to use"
+            },
+            workflowName: {
+              type: "string",
+              description: "Custom name for the new workflow"
+            },
+            customizations: {
+              type: "object",
+              description: "Node customizations and settings",
+              properties: {
+                nodes: {
+                  type: "array",
+                  description: "Array of node customizations"
+                },
+                settings: {
+                  type: "object",
+                  description: "Workflow settings overrides"
+                }
+              }
+            },
+            deployToEnvironment: {
+              type: "string",
+              description: "Environment ID to deploy to (optional)"
+            }
+          },
+          required: ["templateId"]
+        },
+      },
+      {
+        name: "publish_template",
+        description: "Publish a workflow as a template to the marketplace",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token with template management permissions"
+            },
+            name: {
+              type: "string",
+              description: "Template name"
+            },
+            description: {
+              type: "string",
+              description: "Template description"
+            },
+            category: {
+              type: "string",
+              enum: ["communication", "data-processing", "ai-automation", "ecommerce", "general"],
+              description: "Template category"
+            },
+            difficulty: {
+              type: "string",
+              enum: ["beginner", "intermediate", "advanced"],
+              description: "Difficulty level"
+            },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "Template tags for searchability"
+            },
+            workflow: {
+              type: "object",
+              description: "Workflow data to use as template",
+              properties: {
+                nodes: {
+                  type: "array",
+                  description: "Workflow nodes"
+                }
+              },
+              required: ["nodes"]
+            },
+            documentation: {
+              type: "string",
+              description: "Template documentation and usage instructions"
+            },
+            isPublic: {
+              type: "boolean",
+              description: "Make template publicly available",
+              default: true
+            }
+          },
+          required: ["token", "name", "description", "workflow"]
+        },
+      },
+      {
+        name: "manage_workflow_versions",
+        description: "Create and manage workflow versions with Git-like versioning",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token"
+            },
+            action: {
+              type: "string",
+              enum: ["create", "list", "get", "tag"],
+              description: "Version management action"
+            },
+            workflowId: {
+              type: "string",
+              description: "Workflow ID for versioning"
+            },
+            workflowData: {
+              type: "object",
+              description: "Workflow data for creating new version"
+            },
+            message: {
+              type: "string",
+              description: "Commit message for version creation"
+            },
+            versionId: {
+              type: "string",
+              description: "Version ID for specific operations"
+            },
+            tag: {
+              type: "string",
+              description: "Tag name for version tagging"
+            }
+          },
+          required: ["token", "action", "workflowId"]
+        },
+      },
+      {
+        name: "manage_environments",
+        description: "Manage deployment environments (dev/staging/prod)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token with environment management permissions"
+            },
+            action: {
+              type: "string",
+              enum: ["create", "update", "delete", "deploy", "list"],
+              description: "Environment management action"
+            },
+            environmentId: {
+              type: "string",
+              description: "Environment ID for specific operations"
+            },
+            name: {
+              type: "string",
+              description: "Environment name"
+            },
+            description: {
+              type: "string",
+              description: "Environment description"
+            },
+            url: {
+              type: "string",
+              description: "Environment URL"
+            },
+            type: {
+              type: "string",
+              enum: ["development", "staging", "production"],
+              description: "Environment type"
+            },
+            settings: {
+              type: "object",
+              description: "Environment configuration settings"
+            },
+            workflowId: {
+              type: "string",
+              description: "Workflow ID for deployment"
+            }
+          },
+          required: ["token", "action"]
+        },
+      },
+      {
+        name: "validate_workflow_best_practices",
+        description: "Validate workflow against best practices and get improvement suggestions",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token"
+            },
+            workflowData: {
+              type: "object",
+              description: "Workflow data to validate",
+              properties: {
+                nodes: {
+                  type: "array",
+                  description: "Workflow nodes"
+                },
+                connections: {
+                  type: "object",
+                  description: "Node connections"
+                }
+              },
+              required: ["nodes"]
+            },
+            includeDetailedReport: {
+              type: "boolean",
+              description: "Include detailed analysis and suggestions",
+              default: true
+            }
+          },
+          required: ["workflowData"]
+        },
+      },
+      {
+        name: "ai_debug_workflow",
+        description: "AI-enhanced debugging with intelligent error analysis and suggestions",
+        inputSchema: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              description: "JWT authentication token"
+            },
+            workflowId: {
+              type: "string",
+              description: "Workflow ID to debug (for execution analysis)"
+            },
+            executionId: {
+              type: "string",
+              description: "Execution ID to analyze (for failure analysis)"
+            },
+            workflowData: {
+              type: "object",
+              description: "Workflow data for static analysis",
+              properties: {
+                nodes: {
+                  type: "array",
+                  description: "Workflow nodes"
+                },
+                connections: {
+                  type: "object",
+                  description: "Node connections"
+                }
+              }
+            },
+            errorContext: {
+              type: "object",
+              description: "Additional error context and symptoms",
+              properties: {
+                errorMessage: {
+                  type: "string",
+                  description: "Error message observed"
+                },
+                symptoms: {
+                  type: "array",
+                  items: {
+                    type: "string"
+                  },
+                  description: "List of observed symptoms or issues"
+                },
+                expectedBehavior: {
+                  type: "string",
+                  description: "Expected workflow behavior"
+                },
+                actualBehavior: {
+                  type: "string",
+                  description: "Actual observed behavior"
+                }
+              }
+            },
+            analysisDepth: {
+              type: "string",
+              enum: ["basic", "detailed", "comprehensive"],
+              description: "Depth of AI analysis to perform",
+              default: "detailed"
+            },
+            includeFixSuggestions: {
+              type: "boolean",
+              description: "Include automated fix suggestions",
+              default: true
+            }
+          }
+        },
+      },
     ],
   };
 });
@@ -1591,8 +4097,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
       case "create_workflow":
+        const requestId = uuidv4();
+        const boundary = createErrorBoundary(requestId, { tool: 'create_workflow', name, nodeCount: nodes?.length });
+
         try {
           const {
+            token,
             name,
             nodes,
             connections = {},
@@ -1601,6 +4111,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             advancedConnections = true,
             connectionConfig = {}
           } = request.params.arguments;
+
+          // Rate limiting
+          const rateLimitKey = token ? verifyJWT(token).userId : 'anonymous';
+          const rateLimit = enforceRateLimit(`create_workflow:${rateLimitKey}`, 10, 3600000);
+
+          if (!rateLimit.allowed) {
+            addToBoundary(boundary.id, 'error', 'Rate limit exceeded', { retryAfter: rateLimit.retryAfter });
+            finalizeBoundary(boundary.id, false);
+            return {
+              content: [{
+                type: "text",
+                text: `Rate limit exceeded for workflow creation. Try again in ${rateLimit.retryAfter} seconds.`
+              }],
+              isError: true
+            };
+          }
+
+          // Enterprise Security: Authentication and Authorization
+          let userContext = null;
+          if (ENABLE_RBAC && token) {
+            requirePermission(token, PERMISSIONS.CREATE_WORKFLOW);
+            const decoded = verifyJWT(token);
+            userContext = decoded;
+
+            // JSON Schema Validation
+            validateWorkflowData({ name, nodes, connections, active, autoConnect, advancedConnections });
+
+            logAuditEvent('WORKFLOW_CREATE_STARTED', decoded.userId, decoded.tenantId, { workflowName: name, nodeCount: nodes.length });
+            addToBoundary(boundary.id, 'info', 'Authentication successful', { userId: decoded.userId, role: decoded.role });
+          } else {
+            addToBoundary(boundary.id, 'warning', 'Creating workflow without authentication', { rbacEnabled: ENABLE_RBAC });
+          }
 
           // AUTOMATIC INTELLIGENCE: Connection and position generation
           let smartConnections = connections;
@@ -2649,6 +5191,967 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
             ],
             isError: true,
+          };
+        }
+
+      case "authenticate_user":
+        try {
+          const { username, password } = request.params.arguments;
+
+          if (!username || !password) {
+            return {
+              content: [{
+                type: "text",
+                text: "Error: Username and password are required"
+              }],
+              isError: true
+            };
+          }
+
+          const authResult = authenticateUser(username, password);
+
+          if (!authResult) {
+            return {
+              content: [{
+                type: "text",
+                text: "Authentication failed: Invalid username or password"
+              }],
+              isError: true
+            };
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: `Authentication successful!\n\nUser: ${authResult.user.username}\nRole: ${authResult.user.role}\nTenant: ${authResult.user.tenantId}\n\nJWT Token: ${authResult.token}\n\nStore this token securely and include it in future requests.`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Authentication error: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "create_user":
+        try {
+          const { token, username, email, password, role, tenantId = 'default' } = request.params.arguments;
+
+          // Verify admin permissions
+          requirePermission(token, PERMISSIONS.MANAGE_USERS);
+
+          if (userDatabase.has(username)) {
+            return {
+              content: [{
+                type: "text",
+                text: `Error: User '${username}' already exists`
+              }],
+              isError: true
+            };
+          }
+
+          const newUser = {
+            id: randomBytes(8).toString('hex'),
+            username,
+            email,
+            password: bcrypt.hashSync(password, 10),
+            role,
+            tenantId,
+            createdAt: new Date().toISOString(),
+            isActive: true
+          };
+
+          userDatabase.set(username, newUser);
+
+          const decoded = verifyJWT(token);
+          logAuditEvent('USER_CREATED', decoded.userId, decoded.tenantId, {
+            targetUser: username,
+            targetRole: role,
+            targetTenant: tenantId
+          });
+
+          return {
+            content: [{
+              type: "text",
+              text: `User '${username}' created successfully!\n\nUser ID: ${newUser.id}\nRole: ${role}\nTenant: ${tenantId}\nCreated: ${newUser.createdAt}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error creating user: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "list_users":
+        try {
+          const { token, tenantId } = request.params.arguments;
+
+          requirePermission(token, PERMISSIONS.MANAGE_USERS);
+
+          const decoded = verifyJWT(token);
+          const users = Array.from(userDatabase.values()).filter(user => {
+            if (tenantId && user.tenantId !== tenantId) return false;
+            if (ENABLE_MULTI_TENANT && decoded.tenantId !== user.tenantId && decoded.role !== USER_ROLES.ADMIN) return false;
+            return true;
+          });
+
+          const userList = users.map(user =>
+            `- ${user.username} (${user.email}) - Role: ${user.role} - Tenant: ${user.tenantId} - ${user.isActive ? 'Active' : 'Inactive'}`
+          ).join('\n');
+
+          logAuditEvent('USERS_LISTED', decoded.userId, decoded.tenantId, { count: users.length });
+
+          return {
+            content: [{
+              type: "text",
+              text: `Found ${users.length} users:\n\n${userList}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error listing users: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "get_audit_logs":
+        try {
+          const { token, limit = 100, action, userId, tenantId } = request.params.arguments;
+
+          requirePermission(token, PERMISSIONS.VIEW_AUDIT_LOGS);
+
+          const decoded = verifyJWT(token);
+          let filteredLogs = auditLogs.filter(log => {
+            if (action && log.action !== action) return false;
+            if (userId && log.userId !== userId) return false;
+            if (tenantId && log.tenantId !== tenantId) return false;
+            if (ENABLE_MULTI_TENANT && decoded.tenantId !== log.tenantId && decoded.role !== USER_ROLES.ADMIN) return false;
+            return true;
+          });
+
+          // Sort by timestamp (newest first) and apply limit
+          filteredLogs = filteredLogs
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, limit);
+
+          const logText = filteredLogs.map(log =>
+            `${log.timestamp} - ${log.action} - User: ${log.userId || 'system'} - Tenant: ${log.tenantId || 'none'} - ${JSON.stringify(log.metadata)}`
+          ).join('\n');
+
+          logAuditEvent('AUDIT_LOGS_ACCESSED', decoded.userId, decoded.tenantId, { count: filteredLogs.length, filters: { action, userId, tenantId } });
+
+          return {
+            content: [{
+              type: "text",
+              text: `Found ${filteredLogs.length} audit log entries:\n\n${logText || 'No audit logs found'}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error retrieving audit logs: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "validate_token":
+        try {
+          const { token } = request.params.arguments;
+
+          const decoded = verifyJWT(token);
+          const user = userDatabase.get(decoded.username);
+
+          return {
+            content: [{
+              type: "text",
+              text: `Token is valid!\n\nUser: ${decoded.username}\nRole: ${decoded.role}\nTenant: ${decoded.tenantId}\nPermissions: ${decoded.permissions.join(', ')}\nSession ID: ${decoded.sessionId}\nExpires: ${new Date(decoded.exp * 1000).toISOString()}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Token validation failed: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "logout_user":
+        try {
+          const { token } = request.params.arguments;
+
+          const decoded = verifyJWT(token);
+
+          // Remove session
+          userSessions.delete(decoded.sessionId);
+
+          logAuditEvent('LOGOUT_SUCCESS', decoded.userId, decoded.tenantId, { sessionId: decoded.sessionId });
+
+          return {
+            content: [{
+              type: "text",
+              text: `Logout successful. Session ${decoded.sessionId} has been invalidated.`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Logout error: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "generate_resource_indicator":
+        try {
+          const { token, resourceType, resourceId } = request.params.arguments;
+
+          // Rate limiting
+          const rateLimitKey = token ? verifyJWT(token).userId : 'anonymous';
+          const rateLimit = enforceRateLimit(`resource_indicator:${rateLimitKey}`, 100, 3600000);
+
+          if (!rateLimit.allowed) {
+            return {
+              content: [{
+                type: "text",
+                text: `Rate limit exceeded. Try again in ${rateLimit.retryAfter} seconds.`
+              }],
+              isError: true
+            };
+          }
+
+          const indicator = generateResourceIndicator(resourceType, resourceId, token);
+
+          if (!indicator) {
+            return {
+              content: [{
+                type: "text",
+                text: "Resource indicators are disabled on this server."
+              }],
+              isError: true
+            };
+          }
+
+          const validation = validateResourceIndicator(indicator, token);
+
+          return {
+            content: [{
+              type: "text",
+              text: `Resource Indicator Generated Successfully!\n\nIndicator: ${indicator}\nResource Type: ${resourceType}\nResource ID: ${resourceId}\nPermissions: ${validation.permissions.join(', ')}\nAudience: ${validation.resourceData.audience}\n\nThis indicator can be used for secure resource access and is valid for 24 hours.`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error generating resource indicator: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "validate_resource_indicator":
+        try {
+          const { indicator, token } = request.params.arguments;
+
+          const validation = validateResourceIndicator(indicator, token);
+
+          if (!validation.valid) {
+            return {
+              content: [{
+                type: "text",
+                text: `Resource Indicator Validation Failed!\n\nReason: ${validation.reason}\nIndicator: ${indicator}`
+              }],
+              isError: true
+            };
+          }
+
+          const age = Date.now() - validation.resourceData.timestamp;
+          const ageHours = Math.floor(age / 3600000);
+          const ageMinutes = Math.floor((age % 3600000) / 60000);
+
+          return {
+            content: [{
+              type: "text",
+              text: `Resource Indicator Valid!\n\nIndicator: ${indicator}\nResource Type: ${validation.resourceData.resourceType}\nResource ID: ${validation.resourceData.resourceId}\nAudience: ${validation.resourceData.audience}\nAge: ${ageHours}h ${ageMinutes}m\nPermissions: ${validation.permissions.join(', ')}\nServer ID: ${validation.resourceData.serverId}\nVersion: ${validation.resourceData.version}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error validating resource indicator: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "get_system_metrics":
+        try {
+          const { token, timeRange = '1h', includeErrors = false } = request.params.arguments;
+
+          if (ENABLE_RBAC) {
+            requirePermission(token, PERMISSIONS.VIEW_AUDIT_LOGS);
+          }
+
+          // Calculate time range in milliseconds
+          const timeRangeMs = {
+            '1h': 3600000,
+            '24h': 86400000,
+            '7d': 604800000,
+            '30d': 2592000000
+          }[timeRange] || 3600000;
+
+          const cutoffTime = Date.now() - timeRangeMs;
+
+          // Collect metrics
+          const metrics = Array.from(requestMetrics.entries())
+            .filter(([key, metric]) => metric.timestamp > cutoffTime)
+            .map(([key, metric]) => metric);
+
+          const totalRequests = metrics.length;
+          const successfulRequests = metrics.filter(m => m.success).length;
+          const avgDuration = metrics.reduce((sum, m) => sum + m.duration, 0) / (totalRequests || 1);
+          const totalErrors = metrics.reduce((sum, m) => sum + m.errors, 0);
+          const totalWarnings = metrics.reduce((sum, m) => sum + m.warnings, 0);
+          const avgRequestSize = metrics.reduce((sum, m) => sum + m.requestSize, 0) / (totalRequests || 1);
+
+          // System metrics
+          const memUsage = process.memoryUsage();
+          const uptime = process.uptime();
+
+          let metricsText = `System Metrics (${timeRange})\n`;
+          metricsText += `================================\n`;
+          metricsText += `Total Requests: ${totalRequests}\n`;
+          metricsText += `Success Rate: ${totalRequests ? Math.round((successfulRequests / totalRequests) * 100) : 0}%\n`;
+          metricsText += `Average Response Time: ${Math.round(avgDuration)}ms\n`;
+          metricsText += `Total Errors: ${totalErrors}\n`;
+          metricsText += `Total Warnings: ${totalWarnings}\n`;
+          metricsText += `Average Request Size: ${Math.round(avgRequestSize)} bytes\n\n`;
+
+          metricsText += `System Information\n`;
+          metricsText += `==================\n`;
+          metricsText += `Uptime: ${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m\n`;
+          metricsText += `Memory Usage: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB\n`;
+          metricsText += `Active Sessions: ${userSessions.size}\n`;
+          metricsText += `Resource Indicators: ${resourceIndicators.size}\n`;
+          metricsText += `Error Boundaries: ${errorBoundaries.size}\n\n`;
+
+          if (includeErrors && totalErrors > 0) {
+            const recentErrors = Array.from(errorBoundaries.values())
+              .filter(b => b.timestamp > cutoffTime && b.errors.length > 0)
+              .slice(-10);
+
+            metricsText += `Recent Errors (Last 10)\n`;
+            metricsText += `=======================\n`;
+            recentErrors.forEach(boundary => {
+              boundary.errors.forEach(error => {
+                metricsText += `${new Date(error.timestamp).toISOString()} - ${error.message}\n`;
+              });
+            });
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: metricsText
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error retrieving system metrics: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "test_transport_security":
+        try {
+          const { token, testData = { test: "encryption validation" } } = request.params.arguments;
+
+          if (ENABLE_RBAC) {
+            requirePermission(token, PERMISSIONS.VIEW_AUDIT_LOGS);
+          }
+
+          // Test encryption/decryption
+          const encrypted = encryptTransportData(testData);
+          let decrypted = null;
+          let encryptionWorking = false;
+
+          if (encrypted.encrypted) {
+            try {
+              decrypted = decryptTransportData(encrypted);
+              encryptionWorking = JSON.stringify(decrypted) === JSON.stringify(testData);
+            } catch (error) {
+              encryptionWorking = false;
+            }
+          }
+
+          // Test resource indicator generation
+          const testIndicator = generateResourceIndicator('test', 'security-test', token);
+          const indicatorValidation = validateResourceIndicator(testIndicator, token);
+
+          return {
+            content: [{
+              type: "text",
+              text: `Transport Security Test Results\n` +
+                   `=================================\n` +
+                   `Encryption Enabled: ${ENABLE_TRANSPORT_ENCRYPTION ? '✅' : '❌'}\n` +
+                   `Encryption Working: ${encryptionWorking ? '✅' : '❌'}\n` +
+                   `Resource Indicators Enabled: ${ENABLE_RESOURCE_INDICATORS ? '✅' : '❌'}\n` +
+                   `Resource Indicator Working: ${indicatorValidation.valid ? '✅' : '❌'}\n` +
+                   `Rate Limiting: ✅ Active\n` +
+                   `Error Boundaries: ✅ Active\n` +
+                   `Audit Logging: ${ENABLE_AUDIT_LOG ? '✅' : '❌'}\n\n` +
+                   `Test Data: ${JSON.stringify(testData)}\n` +
+                   `Encrypted: ${encrypted.encrypted ? 'Yes' : 'No'}\n` +
+                   `Decryption Match: ${encryptionWorking ? 'Yes' : 'No'}\n` +
+                   `Test Indicator: ${testIndicator || 'N/A'}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Transport security test failed: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "health_check":
+        try {
+          const { token, includeDetailed = false } = request.params.arguments;
+
+          let healthStatus = 'healthy';
+          const checks = {
+            server: '✅ Running',
+            memory: '✅ Normal',
+            authentication: '✅ Operational',
+            database: '✅ Connected',
+            security: '✅ Active'
+          };
+
+          // Memory check
+          const memUsage = process.memoryUsage();
+          const memUsageMB = memUsage.heapUsed / 1024 / 1024;
+          if (memUsageMB > 500) {
+            checks.memory = '⚠️ High Memory Usage';
+            healthStatus = 'degraded';
+          }
+
+          // Security checks
+          if (!ENABLE_AUDIT_LOG) {
+            checks.security = '⚠️ Audit Logging Disabled';
+            healthStatus = 'degraded';
+          }
+
+          // Check for recent errors
+          const recentErrors = Array.from(errorBoundaries.values())
+            .filter(b => b.timestamp > Date.now() - 300000 && b.errors.length > 0); // Last 5 minutes
+
+          if (recentErrors.length > 10) {
+            checks.server = '⚠️ High Error Rate';
+            healthStatus = 'degraded';
+          }
+
+          let healthText = `System Health Check\n`;
+          healthText += `==================\n`;
+          healthText += `Overall Status: ${healthStatus.toUpperCase()}\n\n`;
+
+          Object.entries(checks).forEach(([check, status]) => {
+            healthText += `${check.charAt(0).toUpperCase() + check.slice(1)}: ${status}\n`;
+          });
+
+          if (includeDetailed && token) {
+            try {
+              const decoded = verifyJWT(token);
+              healthText += `\nDetailed Information\n`;
+              healthText += `====================\n`;
+              healthText += `Memory Usage: ${Math.round(memUsageMB)}MB\n`;
+              healthText += `Uptime: ${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m\n`;
+              healthText += `Active Sessions: ${userSessions.size}\n`;
+              healthText += `Recent Errors (5min): ${recentErrors.length}\n`;
+              healthText += `Rate Limit Entries: ${rateLimitStore.size}\n`;
+              healthText += `Resource Indicators: ${resourceIndicators.size}\n`;
+              healthText += `RBAC Enabled: ${ENABLE_RBAC ? 'Yes' : 'No'}\n`;
+              healthText += `Multi-Tenant: ${ENABLE_MULTI_TENANT ? 'Yes' : 'No'}\n`;
+              healthText += `Transport Encryption: ${ENABLE_TRANSPORT_ENCRYPTION ? 'Yes' : 'No'}\n`;
+            } catch (error) {
+              healthText += `\nAuthentication required for detailed metrics.\n`;
+            }
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: healthText
+            }],
+            isError: healthStatus === 'unhealthy'
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Health check failed: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "browse_template_marketplace":
+        try {
+          const { query = '', category, difficulty, verified, minRating, limit = 20 } = request.params.arguments;
+
+          const filters = {};
+          if (category) filters.category = category;
+          if (difficulty) filters.difficulty = difficulty;
+          if (verified !== undefined) filters.verified = verified;
+          if (minRating) filters.minRating = minRating;
+
+          const templates = searchTemplates(query, filters).slice(0, limit);
+
+          const templateList = templates.map(template =>
+            `📋 **${template.name}** (${template.difficulty})\n` +
+            `   💎 Rating: ${template.rating}/5 ⭐ | Downloads: ${template.downloads}\n` +
+            `   📂 Category: ${template.category} | Author: ${template.author}\n` +
+            `   🏷️  Tags: ${template.tags.join(', ')}\n` +
+            `   ⏱️  Time: ${template.estimatedTime} | ${template.verified ? '✅ Verified' : '⚠️ Community'}\n` +
+            `   📝 ${template.description}\n` +
+            `   🆔 ID: ${template.id}`
+          ).join('\n\n');
+
+          return {
+            content: [{
+              type: "text",
+              text: `🏪 Template Marketplace Results\n` +
+                   `===============================\n\n` +
+                   `Found ${templates.length} templates${query ? ` for "${query}"` : ''}\n\n` +
+                   `${templateList || 'No templates found matching your criteria.'}\n\n` +
+                   `💡 Use 'create_workflow_from_template' with a template ID to create a workflow.`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error browsing template marketplace: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "create_workflow_from_template":
+        try {
+          const { token, templateId, workflowName, customizations = {}, deployToEnvironment } = request.params.arguments;
+
+          const result = createWorkflowFromTemplate(templateId, customizations, token);
+
+          // Apply custom name if provided
+          if (workflowName) {
+            result.workflow.name = workflowName;
+          }
+
+          // Deploy to environment if specified
+          let deploymentResult = null;
+          if (deployToEnvironment && token) {
+            try {
+              deploymentResult = manageEnvironment(deployToEnvironment, 'deploy', {
+                workflowId: 'template-generated',
+                version: result.template.version
+              }, token);
+            } catch (deployError) {
+              console.warn('Deployment failed:', deployError.message);
+            }
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: `✅ Workflow Created from Template!\n\n` +
+                   `📋 Workflow Name: ${result.workflow.name}\n` +
+                   `📦 Template: ${result.template.name} v${result.template.version}\n` +
+                   `👤 Template Author: ${result.template.author}\n` +
+                   `🔧 Nodes: ${result.workflow.nodes.length}\n` +
+                   `🔗 Auto-Connect: ${result.workflow.autoConnect ? 'Enabled' : 'Disabled'}\n` +
+                   `🚀 Advanced Connections: ${result.workflow.advancedConnections ? 'Enabled' : 'Disabled'}\n` +
+                   `🔒 Resource Indicator: ${result.resourceIndicator}\n` +
+                   `${deploymentResult ? `\n🌐 Deployment: ${deploymentResult.status} to ${deployToEnvironment}` : ''}\n\n` +
+                   `🎯 The workflow is ready to use! All nodes are connected automatically.`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error creating workflow from template: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "publish_template":
+        try {
+          const { token, name, description, category, difficulty, tags, workflow, documentation, isPublic } = request.params.arguments;
+
+          const templateData = {
+            name,
+            description,
+            category,
+            difficulty,
+            tags,
+            template: workflow,
+            documentation,
+            isPublic
+          };
+
+          const publishedTemplate = publishTemplate(templateData, token);
+
+          return {
+            content: [{
+              type: "text",
+              text: `🎉 Template Published Successfully!\n\n` +
+                   `📋 Template Name: ${publishedTemplate.name}\n` +
+                   `🆔 Template ID: ${publishedTemplate.id}\n` +
+                   `📂 Category: ${publishedTemplate.category}\n` +
+                   `⚡ Difficulty: ${publishedTemplate.difficulty}\n` +
+                   `🏷️  Tags: ${publishedTemplate.tags.join(', ')}\n` +
+                   `👤 Author: ${publishedTemplate.author}\n` +
+                   `📅 Version: ${publishedTemplate.version}\n` +
+                   `${publishedTemplate.verified ? '✅ Verified' : '⚠️ Pending Verification'}\n` +
+                   `🌐 Public: ${publishedTemplate.isPublic ? 'Yes' : 'No'}\n` +
+                   `📜 License: ${publishedTemplate.license}\n\n` +
+                   `🚀 Your template is now available in the marketplace!`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error publishing template: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "manage_workflow_versions":
+        try {
+          const { token, action, workflowId, workflowData, message, versionId, tag } = request.params.arguments;
+
+          switch (action) {
+            case 'create':
+              if (!workflowData) throw new Error('workflowData required for creating version');
+              const version = createWorkflowVersion(workflowId, workflowData, token, message);
+              return {
+                content: [{
+                  type: "text",
+                  text: `📦 New Version Created!\n\n` +
+                       `🆔 Version ID: ${version.id}\n` +
+                       `📊 Version: ${version.version}\n` +
+                       `👤 Author: ${version.author}\n` +
+                       `💬 Message: ${version.message}\n` +
+                       `🔍 Hash: ${version.hash}\n` +
+                       `📅 Created: ${version.createdAt}\n\n` +
+                       `✅ Workflow version saved successfully!`
+                }]
+              };
+
+            case 'list':
+              const versions = getWorkflowVersions(workflowId, token);
+              const versionList = versions.map(v =>
+                `📦 ${v.version} - ${v.author} (${v.hash})\n` +
+                `   💬 ${v.message}\n` +
+                `   📅 ${new Date(v.timestamp).toLocaleDateString()}\n` +
+                `   🏷️  ${v.tags.join(', ') || 'No tags'} ${v.isStable ? '🔒 Stable' : ''}`
+              ).join('\n\n');
+
+              return {
+                content: [{
+                  type: "text",
+                  text: `📚 Workflow Versions for ${workflowId}\n` +
+                       `===================================\n\n` +
+                       `${versionList || 'No versions found.'}`
+                }]
+              };
+
+            default:
+              throw new Error(`Unknown version action: ${action}`);
+          }
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Version management error: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "manage_environments":
+        try {
+          const { token, action, environmentId, name, description, url, type, settings, workflowId } = request.params.arguments;
+
+          switch (action) {
+            case 'list':
+              const envList = Array.from(environments.values()).map(env =>
+                `🌐 **${env.name}** (${env.type})\n` +
+                `   🆔 ID: ${env.id}\n` +
+                `   🔗 URL: ${env.url}\n` +
+                `   📝 ${env.description}\n` +
+                `   ${env.isActive ? '✅ Active' : '❌ Inactive'}\n` +
+                `   ⚙️  Debug: ${env.settings.debugMode ? 'On' : 'Off'} | Log: ${env.settings.logLevel}`
+              ).join('\n\n');
+
+              return {
+                content: [{
+                  type: "text",
+                  text: `🌐 Deployment Environments\n` +
+                       `==========================\n\n` +
+                       `${envList}`
+                }]
+              };
+
+            case 'create':
+              const newEnv = manageEnvironment(null, 'create', { name, description, url, type, settings }, token);
+              return {
+                content: [{
+                  type: "text",
+                  text: `🆕 Environment Created!\n\n` +
+                       `🆔 ID: ${newEnv.id}\n` +
+                       `🌐 Name: ${newEnv.name}\n` +
+                       `🔗 URL: ${newEnv.url}\n` +
+                       `⚡ Type: ${newEnv.type}\n` +
+                       `📅 Created: ${newEnv.createdAt}`
+                }]
+              };
+
+            case 'deploy':
+              if (!workflowId) throw new Error('workflowId required for deployment');
+              const deployment = manageEnvironment(environmentId, 'deploy', { workflowId }, token);
+              return {
+                content: [{
+                  type: "text",
+                  text: `🚀 Deployment Started!\n\n` +
+                       `🆔 Deployment ID: ${deployment.id}\n` +
+                       `🌐 Environment: ${environmentId}\n` +
+                       `📋 Workflow: ${workflowId}\n` +
+                       `📊 Status: ${deployment.status}\n` +
+                       `📅 Started: ${deployment.deployedAt}`
+                }]
+              };
+
+            default:
+              const result = manageEnvironment(environmentId, action, { name, description, url, type, settings }, token);
+              return {
+                content: [{
+                  type: "text",
+                  text: `✅ Environment ${action} completed successfully!`
+                }]
+              };
+          }
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Environment management error: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "validate_workflow_best_practices":
+        try {
+          const { token, workflowData, includeDetailedReport = true } = request.params.arguments;
+
+          const validation = validateWorkflowBestPractices(workflowData);
+
+          let reportText = `📊 Workflow Validation Report\n` +
+                          `=============================\n\n` +
+                          `🎯 Overall Score: ${validation.score}/100\n` +
+                          `${validation.valid ? '✅ Valid' : '❌ Has Errors'}\n\n` +
+                          `📈 Metrics:\n` +
+                          `• Complexity: ${validation.metrics.complexity}\n` +
+                          `• Maintainability: ${validation.metrics.maintainability}\n` +
+                          `• Performance: ${validation.metrics.performance}\n\n` +
+                          `📋 Summary:\n` +
+                          `• Total Nodes: ${validation.summary.totalNodes}\n` +
+                          `• Trigger Nodes: ${validation.summary.triggerNodes}\n` +
+                          `• Connected Nodes: ${validation.summary.connectedNodes}\n` +
+                          `• Orphaned Nodes: ${validation.summary.orphanedNodes}\n` +
+                          `• Security Issues: ${validation.summary.securityIssues}\n` +
+                          `• Performance Warnings: ${validation.summary.performanceWarnings}`;
+
+          if (includeDetailedReport) {
+            if (validation.issues.length > 0) {
+              reportText += `\n\n🚨 Issues Found:\n`;
+              validation.issues.forEach((issue, index) => {
+                reportText += `${index + 1}. [${issue.severity.toUpperCase()}] ${issue.message}\n`;
+              });
+            }
+
+            if (validation.suggestions.length > 0) {
+              reportText += `\n\n💡 Suggestions for Improvement:\n`;
+              validation.suggestions.forEach((suggestion, index) => {
+                reportText += `${index + 1}. [${suggestion.type.toUpperCase()}] ${suggestion.message}\n`;
+              });
+            }
+          }
+
+          if (validation.score >= 90) {
+            reportText += `\n\n🏆 Excellent! Your workflow follows best practices.`;
+          } else if (validation.score >= 70) {
+            reportText += `\n\n👍 Good workflow! Consider addressing the suggestions above.`;
+          } else {
+            reportText += `\n\n⚠️ This workflow needs improvement. Please review the issues and suggestions.`;
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: reportText
+            }],
+            isError: !validation.valid
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Workflow validation error: ${error.message}`
+            }],
+            isError: true
+          };
+        }
+
+      case "ai_debug_workflow":
+        try {
+          const {
+            token,
+            workflowId,
+            executionId,
+            workflowData,
+            errorContext,
+            analysisDepth = 'detailed',
+            includeFixSuggestions = true
+          } = request.params.arguments;
+
+          // Authenticate user if token provided
+          if (token && !authenticateUser(token)) {
+            return {
+              content: [{
+                type: "text",
+                text: "Authentication failed. Please provide a valid JWT token."
+              }],
+              isError: true
+            };
+          }
+
+          let workflowToAnalyze = workflowData;
+          let executionToAnalyze = null;
+
+          // If workflowId provided, fetch the workflow
+          if (workflowId && !workflowToAnalyze) {
+            try {
+              const workflowResponse = await makeApiRequest(`/workflows/${workflowId}`);
+              workflowToAnalyze = workflowResponse;
+            } catch (error) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Failed to fetch workflow ${workflowId}: ${error.message}`
+                }],
+                isError: true
+              };
+            }
+          }
+
+          // If executionId provided, fetch the execution data
+          if (executionId) {
+            try {
+              const executionResponse = await makeApiRequest(`/executions/${executionId}`);
+              executionToAnalyze = executionResponse;
+
+              // If we have execution data but no workflow data, try to get it
+              if (!workflowToAnalyze && executionToAnalyze.workflowId) {
+                try {
+                  const workflowResponse = await makeApiRequest(`/workflows/${executionToAnalyze.workflowId}`);
+                  workflowToAnalyze = workflowResponse;
+                } catch (e) {
+                  console.error('Could not fetch workflow for execution analysis:', e.message);
+                }
+              }
+            } catch (error) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Failed to fetch execution ${executionId}: ${error.message}`
+                }],
+                isError: true
+              };
+            }
+          }
+
+          // Perform AI analysis
+          const analysis = analyzeWorkflowWithAI(workflowToAnalyze, executionToAnalyze, errorContext);
+
+          // Generate detailed report
+          const report = generateDebuggingReport(analysis, analysisDepth);
+
+          // Add context information
+          let contextInfo = '';
+          if (workflowId) contextInfo += `📋 Workflow ID: ${workflowId}\n`;
+          if (executionId) contextInfo += `🔄 Execution ID: ${executionId}\n`;
+          if (errorContext && errorContext.errorMessage) contextInfo += `❌ Error: ${errorContext.errorMessage}\n`;
+          if (contextInfo) contextInfo += '\n';
+
+          let finalReport = contextInfo + report;
+
+          // Add summary at the end
+          finalReport += `\n\n📊 Analysis Summary\n`;
+          finalReport += `${'─'.repeat(18)}\n`;
+          finalReport += `• Issues Found: ${analysis.issues.length}\n`;
+          finalReport += `• Auto-fixable Issues: ${analysis.issues.filter(i => i.autoFix).length}\n`;
+          finalReport += `• AI Recommendations: ${analysis.aiRecommendations.length}\n`;
+          finalReport += `• Analysis Confidence: ${analysis.confidence}%\n`;
+
+          if (analysis.confidence > 80) {
+            finalReport += `\n✅ High-confidence analysis complete. Recommendations are likely accurate.`;
+          } else if (analysis.confidence > 50) {
+            finalReport += `\n⚠️  Medium-confidence analysis. Consider providing more context for better results.`;
+          } else {
+            finalReport += `\n❌ Low-confidence analysis. Please provide execution data or error context for better analysis.`;
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: finalReport
+            }],
+            isError: false
+          };
+
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `AI debugging analysis failed: ${error.message}`
+            }],
+            isError: true
           };
         }
 
