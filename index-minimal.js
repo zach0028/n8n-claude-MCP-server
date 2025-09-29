@@ -571,52 +571,181 @@ function generateStatefulConnections(nodes, stateConfig = {}) {
   return connections;
 }
 
-// MASTER CONNECTION GENERATOR
+// ADAPTIVE INTELLIGENCE: Detect required connection types from nodes
+function detectRequiredConnectionTypes(nodes) {
+  const detectedTypes = {
+    enableMerge: false,
+    enableSwitch: false,
+    enableErrorHandling: false,
+    enableAdvancedWebhook: false,
+    enableLoops: false,
+    enableTemporal: false,
+    enableAI: false,
+    enableDynamic: false,
+    enableParallel: false,
+    enableStateful: false
+  };
+
+  // Analyze node types to determine required connections
+  nodes.forEach(node => {
+    const nodeType = node.type.toLowerCase();
+    const nodeName = node.name?.toLowerCase() || '';
+
+    // Detect Merge/Split needs
+    if (nodeType.includes('merge') ||
+        nodeType.includes('split') ||
+        nodeName.includes('merge') ||
+        nodeName.includes('combine')) {
+      detectedTypes.enableMerge = true;
+    }
+
+    // Detect Switch routing needs
+    if (nodeType.includes('switch') ||
+        nodeType.includes('if') && nodes.length > 3 ||
+        nodeName.includes('route') ||
+        nodeName.includes('switch') ||
+        nodeName.includes('conditional')) {
+      detectedTypes.enableSwitch = true;
+    }
+
+    // Detect Error handling needs
+    if (nodeType.includes('errortrigger') ||
+        nodeName.includes('error') ||
+        nodeName.includes('retry') ||
+        nodeName.includes('fallback') ||
+        nodeType.includes('httprequest') || // HTTP requests often need error handling
+        nodeType.includes('webhook')) { // Webhooks benefit from error handling
+      detectedTypes.enableErrorHandling = true;
+    }
+
+    // Detect Advanced webhook needs
+    if (nodeType.includes('webhook')) {
+      // Check if there's a response node or multi-method indicators
+      const hasResponseNode = nodes.some(n => n.type.toLowerCase().includes('respondtowebhook'));
+      const isMultiMethod = nodeName.includes('multi') || nodeName.includes('method');
+
+      if (hasResponseNode || isMultiMethod) {
+        detectedTypes.enableAdvancedWebhook = true;
+      }
+    }
+
+    // Detect Loop needs
+    if (nodeType.includes('splitinbatches') ||
+        nodeType.includes('loop') ||
+        nodeName.includes('loop') ||
+        nodeName.includes('foreach') ||
+        nodeName.includes('batch') ||
+        nodeName.includes('iterate')) {
+      detectedTypes.enableLoops = true;
+    }
+
+    // Detect Temporal needs
+    if (nodeType.includes('wait') ||
+        nodeType.includes('cron') ||
+        nodeType.includes('schedule') ||
+        nodeName.includes('delay') ||
+        nodeName.includes('wait') ||
+        nodeName.includes('schedule')) {
+      detectedTypes.enableTemporal = true;
+    }
+
+    // Detect AI needs
+    if (nodeType.includes('openai') ||
+        nodeType.includes('anthropic') ||
+        nodeType.includes('llm') ||
+        nodeName.includes('ai') ||
+        nodeName.includes('gpt') ||
+        nodeName.includes('claude') ||
+        nodeName.includes('sentiment') ||
+        nodeName.includes('classify')) {
+      detectedTypes.enableAI = true;
+    }
+
+    // Detect Dynamic source needs
+    if (nodeType.includes('httprequest') &&
+        (nodeName.includes('dynamic') ||
+         nodeName.includes('variable') ||
+         nodeName.includes('context'))) {
+      detectedTypes.enableDynamic = true;
+    }
+
+    // Detect Parallel processing needs
+    if (nodes.filter(n =>
+        !n.type.includes('trigger') &&
+        !n.type.includes('respondtowebhook') &&
+        !n.type.includes('merge')).length > 2) {
+      detectedTypes.enableParallel = true;
+    }
+
+    // Detect Stateful needs
+    if (nodeName.includes('state') ||
+        nodeName.includes('cache') ||
+        nodeName.includes('session') ||
+        nodeName.includes('remember') ||
+        nodeType.includes('redis') ||
+        nodeType.includes('mongodb')) {
+      detectedTypes.enableStateful = true;
+    }
+  });
+
+  console.log('🧠 Adaptive Intelligence - Detected connection types:', detectedTypes);
+  return detectedTypes;
+}
+
+// MASTER CONNECTION GENERATOR with Adaptive Intelligence
 function generateAdvancedConnections(nodes, connectionConfig = {}) {
   let connections = {};
 
-  // Apply connection types based on configuration
-  if (connectionConfig.enableMerge) {
-    Object.assign(connections, generateMergeConnections(nodes, connectionConfig.mergeType));
+  // If no explicit configuration provided, use adaptive intelligence
+  let finalConfig = connectionConfig;
+
+  if (Object.keys(connectionConfig).length === 0 || connectionConfig.adaptive !== false) {
+    const detectedTypes = detectRequiredConnectionTypes(nodes);
+    finalConfig = { ...detectedTypes, ...connectionConfig }; // User config overrides detection
   }
 
-  if (connectionConfig.enableSwitch) {
-    Object.assign(connections, generateSwitchConnections(nodes, connectionConfig.switchRules));
+  // Apply connection types based on final configuration
+  if (finalConfig.enableMerge) {
+    Object.assign(connections, generateMergeConnections(nodes, finalConfig.mergeType));
   }
 
-  if (connectionConfig.enableErrorHandling) {
-    Object.assign(connections, generateErrorHandlingConnections(nodes, connectionConfig.errorConfig));
+  if (finalConfig.enableSwitch) {
+    Object.assign(connections, generateSwitchConnections(nodes, finalConfig.switchRules));
   }
 
-  if (connectionConfig.enableAdvancedWebhook) {
-    Object.assign(connections, generateWebhookConnections(nodes, connectionConfig.webhookConfig));
+  if (finalConfig.enableErrorHandling) {
+    Object.assign(connections, generateErrorHandlingConnections(nodes, finalConfig.errorConfig));
   }
 
-  if (connectionConfig.enableLoops) {
-    Object.assign(connections, generateLoopConnections(nodes, connectionConfig.loopConfig));
+  if (finalConfig.enableAdvancedWebhook) {
+    Object.assign(connections, generateWebhookConnections(nodes, finalConfig.webhookConfig));
   }
 
-  if (connectionConfig.enableTemporal) {
-    Object.assign(connections, generateTemporalConnections(nodes, connectionConfig.timeConfig));
+  if (finalConfig.enableLoops) {
+    Object.assign(connections, generateLoopConnections(nodes, finalConfig.loopConfig));
   }
 
-  if (connectionConfig.enableAI) {
-    Object.assign(connections, generateAIConnections(nodes, connectionConfig.aiConfig));
+  if (finalConfig.enableTemporal) {
+    Object.assign(connections, generateTemporalConnections(nodes, finalConfig.timeConfig));
   }
 
-  if (connectionConfig.enableDynamic) {
-    Object.assign(connections, generateDynamicConnections(nodes, connectionConfig.dynamicConfig));
+  if (finalConfig.enableAI) {
+    Object.assign(connections, generateAIConnections(nodes, finalConfig.aiConfig));
   }
 
-  if (connectionConfig.enableParallel) {
-    Object.assign(connections, generateParallelConnections(nodes, connectionConfig.parallelConfig));
+  if (finalConfig.enableDynamic) {
+    Object.assign(connections, generateDynamicConnections(nodes, finalConfig.dynamicConfig));
   }
 
-  if (connectionConfig.enableStateful) {
-    Object.assign(connections, generateStatefulConnections(nodes, connectionConfig.stateConfig));
+  if (finalConfig.enableParallel) {
+    Object.assign(connections, generateParallelConnections(nodes, finalConfig.parallelConfig));
   }
 
-  // Fallback to basic connections if no advanced types specified
+  if (finalConfig.enableStateful) {
+    Object.assign(connections, generateStatefulConnections(nodes, finalConfig.stateConfig));
+  }
+
+  // Fallback to basic connections if no advanced types detected or specified
   if (Object.keys(connections).length === 0) {
     connections = generateSmartConnections(nodes);
   }
@@ -853,8 +982,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             advancedConnections: {
               type: "boolean",
-              description: "Enable advanced connection types (merge, switch, error handling, etc.)",
-              default: false
+              description: "Enable advanced connection types with adaptive intelligence (default: true)",
+              default: true
             },
             connectionConfig: {
               type: "object",
@@ -1469,7 +1598,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             connections = {},
             active = false,
             autoConnect = true,
-            advancedConnections = false,
+            advancedConnections = true,
             connectionConfig = {}
           } = request.params.arguments;
 
@@ -1566,6 +1695,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           // Analyser les connexions générées
           const connectionCount = Object.keys(smartConnections).length;
           const autoConnected = autoConnect && Object.keys(connections).length === 0 && connectionCount > 0;
+          const isAdvancedConnections = advancedConnections && Object.keys(connectionConfig).length === 0;
 
           return {
             content: [
@@ -1579,6 +1709,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                       `• Connections: ${connectionCount}\n` +
                       `• Status: ${result.active ? '🟢 Active' : '🔴 Inactive'}\n` +
                       (autoConnected ? `• 🤖 **Smart connections automatically generated!**\n` : '') +
+                      (isAdvancedConnections ? `• 🧠 **Adaptive Intelligence:** Advanced connection types auto-detected\n` : '') +
                       `\n**Workflow Structure:**\n` +
                       `${result.nodes?.map(n => `• ${n.name} (${n.type.split('.').pop()})`).join('\n') || 'No nodes'}\n\n` +
                       (autoConnected ? `🧠 **AI Enhancement:** Nodes automatically connected in logical sequence\n\n` : '') +

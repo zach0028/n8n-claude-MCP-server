@@ -100,33 +100,44 @@ Add to your `claude_desktop_config.json`:
 
 ### 🎯 **IMPORTANT: How to Create Workflows with Claude**
 
-To create workflows successfully, you **MUST** explicitly ask Claude to:
-1. **Create the workflow in n8n via MCP**
-2. **Make the connections between components**
+✨ **NEW: Adaptive Intelligence System** ✨
+
+Our MCP server now features **Adaptive Intelligence** that automatically detects and applies the right connection types based on your workflow nodes. You no longer need to specify connection types manually!
+
+**Simple approach:**
+1. **Describe your workflow** to Claude
+2. **Let the system automatically detect** the best connection patterns
+3. **Advanced connections are applied automatically** based on node analysis
+
+**For advanced users:**
+- Override automatic detection by specifying connection types explicitly
+- Use `create_advanced_workflow` for full manual control
 
 ### ✅ **Correct Prompts Examples**
 
-#### Create a Complete Webhook to Email Workflow
+#### Create a Complete Webhook to Email Workflow (Auto-Detected)
 ```
-"Use the n8n MCP tools to create a new workflow in n8n that:
-1. Receives webhook data via POST
-2. Processes the incoming data
-3. Sends an email notification
-4. Returns a success response
+"Create a workflow that receives webhook data, processes it, and sends an email notification with a response."
+```
+*🧠 System automatically detects: Error handling, Advanced webhook, Parallel processing*
 
-Please create this workflow in n8n and ensure all nodes are properly connected."
+#### Create a Data Processing Pipeline (Auto-Detected)
 ```
+"Build a workflow that starts with a webhook, transforms data, stores in database, and sends Slack notification."
+```
+*🧠 System automatically detects: Error handling, Parallel processing*
 
-#### Create a Data Processing Pipeline
+#### Create AI-Powered Sentiment Analysis (Auto-Detected)
 ```
-"Create a workflow in n8n using the MCP server that:
-1. Starts with a webhook trigger
-2. Adds a function node to transform the data
-3. Connects to a database to store results
-4. Sends a Slack notification when complete
+"Create a workflow that analyzes customer feedback sentiment and routes positive/negative responses differently."
+```
+*🧠 System automatically detects: AI enrichment, Switch routing, Error handling*
 
-Make sure to create all connections between the nodes."
+#### Create Batch Processing Loop (Auto-Detected)
 ```
+"Build a workflow that processes large datasets in batches with delays between operations."
+```
+*🧠 System automatically detects: Loop connections, Temporal delays, Error handling*
 
 #### Create from Template and Customize
 ```
@@ -257,9 +268,16 @@ Use 'error_handling' connection type with retry configuration."
 
 ## 🏗️ Architecture
 
-### 🔧 **Advanced Connection System**
+### 🔧 **Advanced Connection System with Adaptive Intelligence**
 
-Our MCP server now supports **25+ advanced connection types** based on analysis of 2000+ n8n workflows and official documentation:
+Our MCP server now supports **25+ advanced connection types** with **Adaptive Intelligence** that automatically detects the right patterns based on analysis of 2000+ n8n workflows and official documentation:
+
+#### 🧠 **Adaptive Intelligence Features**
+- **Automatic Detection**: Analyzes node types and names to determine required connections
+- **Zero Configuration**: No manual setup needed for common patterns
+- **Smart Analysis**: Detects merge nodes → enables merge connections, AI nodes → enables AI routing, etc.
+- **Override Capability**: Advanced users can still specify exact connection types
+- **Learning System**: Based on patterns from thousands of real workflows
 
 #### **Priority 1: Critical Connections**
 - **Merge/Split Connections**: Append, byKey, position, combinations
