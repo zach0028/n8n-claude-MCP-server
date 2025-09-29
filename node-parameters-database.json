@@ -1,0 +1,964 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Base de Données Complète des Nœuds n8n",
+  "description": "Documentation exhaustive de tous les nœuds n8n avec paramètres, types, credentials et exemples",
+  "version": "1.0.0",
+  "lastUpdated": "2025-01-29",
+  "nodes": {
+    "n8n-nodes-base.httpRequest": {
+      "displayName": "HTTP Request",
+      "description": "Effectue des requêtes HTTP vers n'importe quelle URL",
+      "category": "Core",
+      "version": 4.2,
+      "credentials": [
+        {
+          "name": "httpBasicAuth",
+          "displayName": "HTTP Basic Auth",
+          "required": false
+        },
+        {
+          "name": "httpDigestAuth",
+          "displayName": "HTTP Digest Auth",
+          "required": false
+        },
+        {
+          "name": "httpHeaderAuth",
+          "displayName": "HTTP Header Auth",
+          "required": false
+        },
+        {
+          "name": "httpQueryAuth",
+          "displayName": "HTTP Query Auth",
+          "required": false
+        },
+        {
+          "name": "oAuth1Api",
+          "displayName": "OAuth1 API",
+          "required": false
+        },
+        {
+          "name": "oAuth2Api",
+          "displayName": "OAuth2 API",
+          "required": false
+        }
+      ],
+      "parameters": {
+        "authentication": {
+          "displayName": "Authentication",
+          "type": "options",
+          "required": false,
+          "default": "none",
+          "options": [
+            {"name": "None", "value": "none"},
+            {"name": "Basic Auth", "value": "basicAuth"},
+            {"name": "Digest Auth", "value": "digestAuth"},
+            {"name": "Header Auth", "value": "headerAuth"},
+            {"name": "Query Auth", "value": "queryAuth"},
+            {"name": "OAuth1", "value": "oAuth1"},
+            {"name": "OAuth2", "value": "oAuth2"},
+            {"name": "Generic Credential Type", "value": "genericCredentialType"}
+          ],
+          "description": "Méthode d'authentification à utiliser"
+        },
+        "url": {
+          "displayName": "URL",
+          "type": "string",
+          "required": true,
+          "default": "",
+          "placeholder": "https://api.example.com/endpoint",
+          "description": "L'URL vers laquelle faire la requête",
+          "expressionSupport": true,
+          "examples": [
+            "https://api.github.com/users/{{$json.username}}",
+            "https://httpbin.org/get?param={{$json.value}}"
+          ]
+        },
+        "method": {
+          "displayName": "Method",
+          "type": "options",
+          "required": true,
+          "default": "GET",
+          "options": [
+            {"name": "DELETE", "value": "DELETE"},
+            {"name": "GET", "value": "GET"},
+            {"name": "HEAD", "value": "HEAD"},
+            {"name": "OPTIONS", "value": "OPTIONS"},
+            {"name": "PATCH", "value": "PATCH"},
+            {"name": "POST", "value": "POST"},
+            {"name": "PUT", "value": "PUT"}
+          ],
+          "description": "Méthode HTTP à utiliser"
+        },
+        "sendQuery": {
+          "displayName": "Send Query Parameters",
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "Ajouter des paramètres de query string"
+        },
+        "queryParameters": {
+          "displayName": "Query Parameters",
+          "type": "fixedCollection",
+          "displayOptions": {
+            "show": {
+              "sendQuery": [true]
+            }
+          },
+          "default": {},
+          "typeOptions": {
+            "multipleValues": true
+          },
+          "description": "Paramètres de query à ajouter à l'URL",
+          "options": [
+            {
+              "name": "parameters",
+              "displayName": "Parameter",
+              "values": [
+                {
+                  "name": "name",
+                  "displayName": "Name",
+                  "type": "string",
+                  "default": "",
+                  "description": "Nom du paramètre"
+                },
+                {
+                  "name": "value",
+                  "displayName": "Value",
+                  "type": "string",
+                  "default": "",
+                  "description": "Valeur du paramètre",
+                  "expressionSupport": true
+                }
+              ]
+            }
+          ],
+          "examples": [
+            {
+              "parameters": [
+                {"name": "page", "value": "1"},
+                {"name": "limit", "value": "={{$json.itemsPerPage}}"}
+              ]
+            }
+          ]
+        },
+        "sendHeaders": {
+          "displayName": "Send Headers",
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "Ajouter des en-têtes personnalisés"
+        },
+        "headerParameters": {
+          "displayName": "Header Parameters",
+          "type": "fixedCollection",
+          "displayOptions": {
+            "show": {
+              "sendHeaders": [true]
+            }
+          },
+          "default": {},
+          "typeOptions": {
+            "multipleValues": true
+          },
+          "description": "En-têtes HTTP à envoyer",
+          "options": [
+            {
+              "name": "parameters",
+              "displayName": "Parameter",
+              "values": [
+                {
+                  "name": "name",
+                  "displayName": "Name",
+                  "type": "string",
+                  "default": "",
+                  "description": "Nom de l'en-tête"
+                },
+                {
+                  "name": "value",
+                  "displayName": "Value",
+                  "type": "string",
+                  "default": "",
+                  "description": "Valeur de l'en-tête",
+                  "expressionSupport": true
+                }
+              ]
+            }
+          ],
+          "examples": [
+            {
+              "parameters": [
+                {"name": "Content-Type", "value": "application/json"},
+                {"name": "Authorization", "value": "Bearer {{$credentials.apiKey}}"},
+                {"name": "X-Custom-Header", "value": "={{$json.customValue}}"}
+              ]
+            }
+          ]
+        },
+        "sendBody": {
+          "displayName": "Send Body",
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "Envoyer un corps de requête",
+          "displayOptions": {
+            "show": {
+              "method": ["POST", "PUT", "PATCH", "DELETE"]
+            }
+          }
+        },
+        "bodyContentType": {
+          "displayName": "Body Content Type",
+          "type": "options",
+          "displayOptions": {
+            "show": {
+              "sendBody": [true]
+            }
+          },
+          "default": "json",
+          "options": [
+            {"name": "JSON", "value": "json"},
+            {"name": "Form-Data Multipart", "value": "multipart-form-data"},
+            {"name": "Form Urlencoded", "value": "form-urlencoded"},
+            {"name": "Raw", "value": "raw"},
+            {"name": "File", "value": "binaryData"},
+            {"name": "n8n Binary Data", "value": "n8nBinaryData"}
+          ],
+          "description": "Type de contenu du corps"
+        },
+        "jsonParameters": {
+          "displayName": "Specify Body",
+          "type": "options",
+          "displayOptions": {
+            "show": {
+              "bodyContentType": ["json"]
+            }
+          },
+          "default": "keypair",
+          "options": [
+            {"name": "Using Fields Below", "value": "keypair"},
+            {"name": "Using JSON", "value": "json"}
+          ]
+        },
+        "bodyParameters": {
+          "displayName": "Body Parameters",
+          "type": "fixedCollection",
+          "displayOptions": {
+            "show": {
+              "sendBody": [true],
+              "bodyContentType": ["json"],
+              "jsonParameters": ["keypair"]
+            }
+          },
+          "default": {},
+          "typeOptions": {
+            "multipleValues": true
+          },
+          "description": "Paramètres du corps de la requête",
+          "options": [
+            {
+              "name": "parameters",
+              "displayName": "Parameter",
+              "values": [
+                {
+                  "name": "name",
+                  "displayName": "Name",
+                  "type": "string",
+                  "default": "",
+                  "description": "Nom du paramètre"
+                },
+                {
+                  "name": "value",
+                  "displayName": "Value",
+                  "type": "string",
+                  "default": "",
+                  "description": "Valeur du paramètre",
+                  "expressionSupport": true
+                }
+              ]
+            }
+          ],
+          "examples": [
+            {
+              "parameters": [
+                {"name": "username", "value": "={{$json.email}}"},
+                {"name": "action", "value": "create"},
+                {"name": "data", "value": "={{JSON.stringify($json.payload)}}"}
+              ]
+            }
+          ]
+        },
+        "body": {
+          "displayName": "Body",
+          "type": "json",
+          "displayOptions": {
+            "show": {
+              "sendBody": [true],
+              "bodyContentType": ["json"],
+              "jsonParameters": ["json"]
+            }
+          },
+          "default": "{}",
+          "description": "Corps de la requête en JSON",
+          "expressionSupport": true,
+          "examples": [
+            "{\"name\": \"={{$json.name}}\", \"email\": \"={{$json.email}}\"}",
+            "={{$json}}"
+          ]
+        },
+        "options": {
+          "displayName": "Options",
+          "type": "collection",
+          "default": {},
+          "description": "Options additionnelles",
+          "placeholder": "Add Option",
+          "options": [
+            {
+              "name": "allowUnauthorizedCerts",
+              "displayName": "Allow Unauthorized Certificates",
+              "type": "boolean",
+              "default": false,
+              "description": "Accepter les certificats SSL non vérifiés"
+            },
+            {
+              "name": "followRedirect",
+              "displayName": "Follow Redirect",
+              "type": "boolean",
+              "default": true,
+              "description": "Suivre les redirections HTTP"
+            },
+            {
+              "name": "ignoreResponseCode",
+              "displayName": "Ignore Response Code",
+              "type": "boolean",
+              "default": false,
+              "description": "Réussir même si le code de réponse indique une erreur"
+            },
+            {
+              "name": "timeout",
+              "displayName": "Timeout",
+              "type": "number",
+              "default": 10000,
+              "description": "Temps d'attente maximum en millisecondes"
+            },
+            {
+              "name": "retry",
+              "displayName": "Retry On Fail",
+              "type": "fixedCollection",
+              "default": {},
+              "description": "Configuration des nouvelles tentatives",
+              "typeOptions": {
+                "multipleValues": false
+              },
+              "options": [
+                {
+                  "name": "retry",
+                  "displayName": "Retry",
+                  "values": [
+                    {
+                      "name": "maxTries",
+                      "displayName": "Max Tries",
+                      "type": "number",
+                      "default": 3
+                    },
+                    {
+                      "name": "waitBetweenTries",
+                      "displayName": "Wait Between Tries (ms)",
+                      "type": "number",
+                      "default": 1000
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "examples": [
+        {
+          "name": "Simple GET request",
+          "description": "Requête GET basique",
+          "parameters": {
+            "method": "GET",
+            "url": "https://api.github.com/users/n8n-io"
+          }
+        },
+        {
+          "name": "POST with JSON body",
+          "description": "Requête POST avec corps JSON",
+          "parameters": {
+            "method": "POST",
+            "url": "https://api.example.com/users",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {"name": "Content-Type", "value": "application/json"}
+              ]
+            },
+            "sendBody": true,
+            "bodyContentType": "json",
+            "jsonParameters": "json",
+            "body": "{\"name\": \"={{$json.name}}\", \"email\": \"={{$json.email}}\"}"
+          }
+        },
+        {
+          "name": "GET with authentication and query params",
+          "description": "Requête GET avec authentification et paramètres",
+          "parameters": {
+            "method": "GET",
+            "url": "https://api.example.com/data",
+            "authentication": "headerAuth",
+            "sendQuery": true,
+            "queryParameters": {
+              "parameters": [
+                {"name": "page", "value": "1"},
+                {"name": "limit", "value": "100"}
+              ]
+            },
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {"name": "Authorization", "value": "Bearer {{$credentials.apiKey}}"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "n8n-nodes-base.webhook": {
+      "displayName": "Webhook",
+      "description": "Déclenche le workflow lors de la réception d'une requête HTTP webhook",
+      "category": "Core",
+      "version": 1.1,
+      "credentials": [],
+      "parameters": {
+        "httpMethod": {
+          "displayName": "HTTP Method",
+          "type": "options",
+          "required": true,
+          "default": "GET",
+          "options": [
+            {"name": "DELETE", "value": "DELETE"},
+            {"name": "GET", "value": "GET"},
+            {"name": "HEAD", "value": "HEAD"},
+            {"name": "PATCH", "value": "PATCH"},
+            {"name": "POST", "value": "POST"},
+            {"name": "PUT", "value": "PUT"}
+          ],
+          "description": "Méthode HTTP que le webhook doit accepter"
+        },
+        "path": {
+          "displayName": "Path",
+          "type": "string",
+          "required": true,
+          "default": "",
+          "placeholder": "webhook-path",
+          "description": "Le chemin de l'URL du webhook",
+          "expressionSupport": false,
+          "examples": [
+            "my-webhook",
+            "github-integration",
+            "user/{{$credentials.userId}}/callback"
+          ]
+        },
+        "authentication": {
+          "displayName": "Authentication",
+          "type": "options",
+          "required": false,
+          "default": "none",
+          "options": [
+            {"name": "None", "value": "none"},
+            {"name": "Basic Auth", "value": "basicAuth"},
+            {"name": "Header Auth", "value": "headerAuth"}
+          ],
+          "description": "Méthode d'authentification requise"
+        },
+        "responseMode": {
+          "displayName": "Response Mode",
+          "type": "options",
+          "required": true,
+          "default": "onReceived",
+          "options": [
+            {"name": "On Received", "value": "onReceived"},
+            {"name": "When Last Node Finishes", "value": "lastNode"},
+            {"name": "Using 'Respond to Webhook' Node", "value": "responseNode"}
+          ],
+          "description": "Quand et comment répondre au webhook"
+        },
+        "responseData": {
+          "displayName": "Response Data",
+          "type": "options",
+          "displayOptions": {
+            "show": {
+              "responseMode": ["lastNode"]
+            }
+          },
+          "default": "firstEntryJson",
+          "options": [
+            {"name": "First Entry JSON", "value": "firstEntryJson"},
+            {"name": "First Entry Binary", "value": "firstEntryBinary"},
+            {"name": "All Entries", "value": "allEntries"},
+            {"name": "No Response Body", "value": "noData"}
+          ],
+          "description": "Données à retourner dans la réponse"
+        },
+        "options": {
+          "displayName": "Options",
+          "type": "collection",
+          "default": {},
+          "description": "Options additionnelles",
+          "placeholder": "Add Option",
+          "options": [
+            {
+              "name": "binaryPropertyName",
+              "displayName": "Binary Property",
+              "type": "string",
+              "default": "data",
+              "description": "Nom de la propriété contenant les données binaires"
+            },
+            {
+              "name": "rawBody",
+              "displayName": "Raw Body",
+              "type": "boolean",
+              "default": false,
+              "description": "Recevoir le corps brut sans parsing"
+            },
+            {
+              "name": "responseCode",
+              "displayName": "Response Code",
+              "type": "number",
+              "default": 200,
+              "description": "Code de statut HTTP à retourner"
+            },
+            {
+              "name": "responseHeaders",
+              "displayName": "Response Headers",
+              "type": "fixedCollection",
+              "typeOptions": {
+                "multipleValues": true
+              },
+              "default": {},
+              "description": "En-têtes à inclure dans la réponse",
+              "options": [
+                {
+                  "name": "entries",
+                  "displayName": "Entry",
+                  "values": [
+                    {
+                      "name": "name",
+                      "displayName": "Name",
+                      "type": "string",
+                      "default": ""
+                    },
+                    {
+                      "name": "value",
+                      "displayName": "Value",
+                      "type": "string",
+                      "default": ""
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "allowedOrigins",
+              "displayName": "Allowed Origins (CORS)",
+              "type": "string",
+              "default": "*",
+              "description": "Origines autorisées pour CORS"
+            }
+          ]
+        }
+      },
+      "examples": [
+        {
+          "name": "Simple POST webhook",
+          "description": "Webhook POST basique",
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "my-webhook",
+            "responseMode": "onReceived"
+          }
+        },
+        {
+          "name": "Webhook with authentication",
+          "description": "Webhook avec authentification header",
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "secure-webhook",
+            "authentication": "headerAuth",
+            "responseMode": "lastNode",
+            "responseData": "firstEntryJson"
+          }
+        },
+        {
+          "name": "Webhook with custom response",
+          "description": "Webhook avec réponse personnalisée",
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "custom-response",
+            "responseMode": "lastNode",
+            "responseData": "firstEntryJson",
+            "options": {
+              "responseCode": 201,
+              "responseHeaders": {
+                "entries": [
+                  {"name": "X-Custom-Header", "value": "custom-value"}
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "n8n-nodes-base.function": {
+      "displayName": "Function",
+      "description": "Exécute du code JavaScript personnalisé pour transformer les données",
+      "category": "Core",
+      "version": 1.0,
+      "credentials": [],
+      "parameters": {
+        "functionCode": {
+          "displayName": "Function",
+          "type": "string",
+          "required": true,
+          "default": "// Code executed for each item\nreturn item;",
+          "typeOptions": {
+            "editor": "code",
+            "editorLanguage": "javaScript"
+          },
+          "description": "Code JavaScript à exécuter pour chaque item",
+          "expressionSupport": false,
+          "examples": [
+            "// Access current item\nconst email = item.json.email;\n\n// Transform data\nitem.json.emailDomain = email.split('@')[1];\nitem.json.timestamp = new Date().toISOString();\n\nreturn item;",
+            "// Access all items\nfor (const item of items) {\n  item.json.processed = true;\n  item.json.index = items.indexOf(item);\n}\nreturn items;",
+            "// Use $input helper\nconst allItems = $input.all();\nconst firstItem = $input.first();\nconst lastItem = $input.last();\n\nreturn $input.all();"
+          ]
+        }
+      },
+      "availableVariables": {
+        "$input": {
+          "description": "Helper pour accéder aux données d'entrée",
+          "methods": {
+            "all()": "Retourne tous les items d'entrée",
+            "first()": "Retourne le premier item",
+            "last()": "Retourne le dernier item",
+            "item": "L'item courant (équivalent à 'item')"
+          }
+        },
+        "item": {
+          "description": "L'item courant en cours de traitement",
+          "properties": {
+            "json": "Données JSON de l'item",
+            "binary": "Données binaires de l'item (si présentes)"
+          }
+        },
+        "items": {
+          "description": "Tableau de tous les items",
+          "type": "array"
+        },
+        "$item": {
+          "description": "Helper pour accéder aux propriétés de l'item courant",
+          "methods": {
+            "json": "Données JSON",
+            "binary": "Données binaires"
+          }
+        },
+        "$node": {
+          "description": "Informations sur le nœud courant",
+          "properties": {
+            "name": "Nom du nœud",
+            "id": "ID du nœud"
+          }
+        },
+        "$workflow": {
+          "description": "Informations sur le workflow",
+          "properties": {
+            "id": "ID du workflow",
+            "name": "Nom du workflow",
+            "active": "Statut actif du workflow"
+          }
+        },
+        "$execution": {
+          "description": "Informations sur l'exécution",
+          "properties": {
+            "id": "ID de l'exécution",
+            "mode": "Mode d'exécution",
+            "resumeUrl": "URL de reprise"
+          }
+        }
+      },
+      "examples": [
+        {
+          "name": "Simple data transformation",
+          "description": "Transformation simple des données",
+          "parameters": {
+            "functionCode": "// Extract domain from email\nitem.json.domain = item.json.email.split('@')[1];\n\n// Add timestamp\nitem.json.processedAt = new Date().toISOString();\n\nreturn item;"
+          }
+        },
+        {
+          "name": "Filter and transform multiple items",
+          "description": "Filtrer et transformer plusieurs items",
+          "parameters": {
+            "functionCode": "// Filter active users only\nconst activeUsers = items.filter(item => item.json.status === 'active');\n\n// Add index to each\nactiveUsers.forEach((item, index) => {\n  item.json.index = index;\n  item.json.total = activeUsers.length;\n});\n\nreturn activeUsers;"
+          }
+        },
+        {
+          "name": "Aggregate data",
+          "description": "Agréger des données",
+          "parameters": {
+            "functionCode": "// Calculate total from all items\nconst total = items.reduce((sum, item) => {\n  return sum + (item.json.amount || 0);\n}, 0);\n\n// Return single item with total\nreturn [{\n  json: {\n    total: total,\n    itemCount: items.length,\n    average: total / items.length\n  }\n}];"
+          }
+        }
+      ]
+    },
+    "n8n-nodes-base.code": {
+      "displayName": "Code",
+      "description": "Exécute du code JavaScript personnalisé (version avancée)",
+      "category": "Core",
+      "version": 2.0,
+      "credentials": [],
+      "parameters": {
+        "mode": {
+          "displayName": "Mode",
+          "type": "options",
+          "required": true,
+          "default": "runOnceForAllItems",
+          "options": [
+            {"name": "Run Once for All Items", "value": "runOnceForAllItems"},
+            {"name": "Run Once for Each Item", "value": "runOnceForEachItem"}
+          ],
+          "description": "Comment exécuter le code"
+        },
+        "jsCode": {
+          "displayName": "JavaScript Code",
+          "type": "string",
+          "required": true,
+          "default": "// Access items\nconst items = $input.all();\n\n// Process\nconst processed = items.map(item => ({\n  json: {\n    ...item.json,\n    processed: true\n  }\n}));\n\nreturn processed;",
+          "typeOptions": {
+            "editor": "code",
+            "editorLanguage": "javaScript"
+          },
+          "description": "Code JavaScript à exécuter",
+          "expressionSupport": false
+        }
+      },
+      "availableVariables": {
+        "$input": {
+          "description": "Helper pour accéder aux données d'entrée",
+          "methods": {
+            "all()": "Retourne tous les items",
+            "first()": "Retourne le premier item",
+            "last()": "Retourne le dernier item",
+            "item": "L'item courant (mode runOnceForEachItem)"
+          }
+        },
+        "$node": {
+          "description": "Informations sur le nœud",
+          "properties": {
+            "name": "Nom du nœud",
+            "id": "ID du nœud"
+          }
+        },
+        "$workflow": {
+          "description": "Informations sur le workflow",
+          "properties": {
+            "id": "ID du workflow",
+            "name": "Nom du workflow",
+            "active": "Statut actif"
+          }
+        },
+        "$execution": {
+          "description": "Informations sur l'exécution",
+          "properties": {
+            "id": "ID de l'exécution",
+            "mode": "Mode d'exécution"
+          }
+        },
+        "$prevNode": {
+          "description": "Nom du nœud précédent"
+        }
+      },
+      "examples": [
+        {
+          "name": "Process all items at once",
+          "description": "Traiter tous les items en une fois",
+          "parameters": {
+            "mode": "runOnceForAllItems",
+            "jsCode": "// Get all items\nconst items = $input.all();\n\n// Add metadata\nconst processed = items.map((item, index) => ({\n  json: {\n    ...item.json,\n    index: index,\n    total: items.length,\n    processedAt: new Date().toISOString()\n  }\n}));\n\nreturn processed;"
+          }
+        },
+        {
+          "name": "Process each item individually",
+          "description": "Traiter chaque item individuellement",
+          "parameters": {
+            "mode": "runOnceForEachItem",
+            "jsCode": "// Get current item\nconst item = $input.item;\n\n// Transform\nconst result = {\n  json: {\n    original: item.json,\n    uppercase: item.json.text?.toUpperCase(),\n    length: item.json.text?.length || 0\n  }\n};\n\nreturn result;"
+          }
+        }
+      ]
+    },
+    "n8n-nodes-base.set": {
+      "displayName": "Set",
+      "description": "Définit ou modifie les valeurs des données",
+      "category": "Core",
+      "version": 3.3,
+      "credentials": [],
+      "parameters": {
+        "mode": {
+          "displayName": "Mode",
+          "type": "options",
+          "required": true,
+          "default": "manual",
+          "options": [
+            {"name": "Manual Mapping", "value": "manual"},
+            {"name": "JSON Output", "value": "json"}
+          ],
+          "description": "Comment définir les valeurs"
+        },
+        "duplicateItem": {
+          "displayName": "Include Other Fields",
+          "type": "boolean",
+          "displayOptions": {
+            "show": {
+              "mode": ["manual"]
+            }
+          },
+          "default": true,
+          "description": "Inclure les champs existants non spécifiés"
+        },
+        "options": {
+          "displayName": "Options",
+          "type": "collection",
+          "displayOptions": {
+            "show": {
+              "mode": ["manual"]
+            }
+          },
+          "default": {},
+          "options": [
+            {
+              "name": "dotNotation",
+              "displayName": "Dot Notation",
+              "type": "boolean",
+              "default": true,
+              "description": "Utiliser la notation pointée pour les propriétés imbriquées"
+            },
+            {
+              "name": "includeOtherFields",
+              "displayName": "Include Binary Data",
+              "type": "boolean",
+              "default": false,
+              "description": "Inclure les données binaires de l'item source"
+            }
+          ]
+        },
+        "assignments": {
+          "displayName": "Assignments",
+          "type": "assignmentCollection",
+          "displayOptions": {
+            "show": {
+              "mode": ["manual"]
+            }
+          },
+          "default": {},
+          "typeOptions": {
+            "multipleValues": true
+          },
+          "options": [
+            {
+              "name": "assignments",
+              "displayName": "Assignment",
+              "values": [
+                {
+                  "name": "name",
+                  "displayName": "Name",
+                  "type": "string",
+                  "default": "",
+                  "description": "Nom de la propriété",
+                  "placeholder": "e.g. fieldName"
+                },
+                {
+                  "name": "value",
+                  "displayName": "Value",
+                  "type": "string",
+                  "default": "",
+                  "description": "Valeur à assigner",
+                  "expressionSupport": true
+                },
+                {
+                  "name": "type",
+                  "displayName": "Type",
+                  "type": "options",
+                  "default": "string",
+                  "options": [
+                    {"name": "String", "value": "string"},
+                    {"name": "Number", "value": "number"},
+                    {"name": "Boolean", "value": "boolean"},
+                    {"name": "Array", "value": "array"},
+                    {"name": "Object", "value": "object"}
+                  ]
+                }
+              ]
+            }
+          ],
+          "description": "Propriétés à définir"
+        },
+        "jsonOutput": {
+          "displayName": "JSON Output",
+          "type": "json",
+          "displayOptions": {
+            "show": {
+              "mode": ["json"]
+            }
+          },
+          "default": "{}",
+          "description": "Objet JSON complet à retourner",
+          "expressionSupport": true
+        }
+      },
+      "examples": [
+        {
+          "name": "Set simple values",
+          "description": "Définir des valeurs simples",
+          "parameters": {
+            "mode": "manual",
+            "duplicateItem": true,
+            "assignments": {
+              "assignments": [
+                {"name": "status", "value": "active", "type": "string"},
+                {"name": "count", "value": "={{$json.items.length}}", "type": "number"},
+                {"name": "verified", "value": "true", "type": "boolean"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set with JSON output",
+          "description": "Définir avec sortie JSON complète",
+          "parameters": {
+            "mode": "json",
+            "jsonOutput": "{\"name\": \"={{$json.firstName}} {{$json.lastName}}\", \"email\": \"={{$json.email}}\", \"timestamp\": \"={{$now}}\"}"
+          }
+        },
+        {
+          "name": "Set nested properties",
+          "description": "Définir des propriétés imbriquées",
+          "parameters": {
+            "mode": "manual",
+            "duplicateItem": false,
+            "options": {
+              "dotNotation": true
+            },
+            "assignments": {
+              "assignments": [
+                {"name": "user.name", "value": "={{$json.name}}", "type": "string"},
+                {"name": "user.email", "value": "={{$json.email}}", "type": "string"},
+                {"name": "metadata.createdAt", "value": "={{$now}}", "type": "string"}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

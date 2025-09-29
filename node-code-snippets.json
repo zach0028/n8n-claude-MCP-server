@@ -1,0 +1,239 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Bibliothèque de Snippets de Code pour Nœuds n8n",
+  "description": "Templates réutilisables pour Function Node et Code Node",
+  "version": "1.0.0",
+  "lastUpdated": "2025-01-29",
+  "categories": {
+    "dataTransformation": {
+      "displayName": "Transformation de Données",
+      "snippets": {
+        "extractFields": {
+          "name": "Extraire des champs spécifiques",
+          "description": "Extrait uniquement les champs nécessaires de chaque item",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Extract specific fields from all items\nconst items = $input.all();\n\nconst processed = items.map(item => ({\n  json: {\n    id: item.json.id,\n    name: item.json.name,\n    email: item.json.email\n    // Add more fields as needed\n  }\n}));\n\nreturn processed;"
+        },
+        "renameFields": {
+          "name": "Renommer des champs",
+          "description": "Renomme des propriétés dans les données",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Rename fields in all items\nconst items = $input.all();\n\nconst processed = items.map(item => ({\n  json: {\n    userId: item.json.id,\n    userName: item.json.name,\n    userEmail: item.json.email,\n    ...item.json  // Keep other fields\n  }\n}));\n\n// Remove old fields\nprocessed.forEach(item => {\n  delete item.json.id;\n  delete item.json.name;\n  delete item.json.email;\n});\n\nreturn processed;"
+        },
+        "flattenNested": {
+          "name": "Aplatir structure imbriquée",
+          "description": "Transforme un objet imbriqué en structure plate",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Flatten nested object structure\nconst items = $input.all();\n\nconst processed = items.map(item => ({\n  json: {\n    userId: item.json.user.id,\n    userName: item.json.user.name,\n    userEmail: item.json.user.profile.email,\n    userPhone: item.json.user.profile.phone,\n    orderId: item.json.order.id,\n    orderTotal: item.json.order.total\n  }\n}));\n\nreturn processed;"
+        },
+        "addComputedFields": {
+          "name": "Ajouter des champs calculés",
+          "description": "Ajoute des champs dérivés des données existantes",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Add computed fields\nconst items = $input.all();\n\nconst processed = items.map(item => ({\n  json: {\n    ...item.json,\n    fullName: `${item.json.firstName} ${item.json.lastName}`,\n    emailDomain: item.json.email.split('@')[1],\n    ageInYears: new Date().getFullYear() - new Date(item.json.birthdate).getFullYear(),\n    totalWithTax: item.json.subtotal * 1.2,\n    processedAt: new Date().toISOString()\n  }\n}));\n\nreturn processed;"
+        }
+      }
+    },
+    "filtering": {
+      "displayName": "Filtrage",
+      "snippets": {
+        "filterByCondition": {
+          "name": "Filtrer par condition",
+          "description": "Garde uniquement les items qui correspondent aux critères",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Filter items based on conditions\nconst items = $input.all();\n\nconst filtered = items.filter(item => {\n  // Keep only active users\n  return item.json.status === 'active' && \n         item.json.verified === true &&\n         item.json.age >= 18;\n});\n\nreturn filtered;"
+        },
+        "filterByDate": {
+          "name": "Filtrer par date",
+          "description": "Filtre les items selon des critères de date",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Filter items by date range\nconst items = $input.all();\nconst now = new Date();\nconst thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));\n\nconst filtered = items.filter(item => {\n  const itemDate = new Date(item.json.createdAt);\n  return itemDate >= thirtyDaysAgo && itemDate <= now;\n});\n\nreturn filtered;"
+        },
+        "removeDuplicates": {
+          "name": "Supprimer les doublons",
+          "description": "Élimine les items en double basés sur une clé",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Remove duplicates based on a key field\nconst items = $input.all();\nconst seen = new Set();\n\nconst unique = items.filter(item => {\n  const key = item.json.email; // Change to your unique key\n  if (seen.has(key)) {\n    return false;\n  }\n  seen.add(key);\n  return true;\n});\n\nreturn unique;"
+        }
+      }
+    },
+    "aggregation": {
+      "displayName": "Agrégation",
+      "snippets": {
+        "sum": {
+          "name": "Calculer une somme",
+          "description": "Calcule la somme d'un champ numérique",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Calculate sum of a numeric field\nconst items = $input.all();\n\nconst total = items.reduce((sum, item) => {\n  return sum + (item.json.amount || 0);\n}, 0);\n\nreturn [{\n  json: {\n    total: total,\n    itemCount: items.length,\n    average: total / items.length\n  }\n}];"
+        },
+        "groupBy": {
+          "name": "Grouper par catégorie",
+          "description": "Regroupe les items par valeur d'un champ",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Group items by a field value\nconst items = $input.all();\nconst grouped = {};\n\nitems.forEach(item => {\n  const category = item.json.category;\n  if (!grouped[category]) {\n    grouped[category] = [];\n  }\n  grouped[category].push(item.json);\n});\n\n// Convert to array of items\nconst result = Object.entries(grouped).map(([category, items]) => ({\n  json: {\n    category: category,\n    items: items,\n    count: items.length,\n    total: items.reduce((sum, i) => sum + (i.amount || 0), 0)\n  }\n}));\n\nreturn result;"
+        },
+        "statistics": {
+          "name": "Calculer des statistiques",
+          "description": "Calcule min, max, moyenne, médiane",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Calculate statistics on a numeric field\nconst items = $input.all();\nconst values = items.map(item => item.json.value).filter(v => typeof v === 'number');\n\nvalues.sort((a, b) => a - b);\n\nconst sum = values.reduce((acc, val) => acc + val, 0);\nconst count = values.length;\nconst average = sum / count;\nconst min = values[0];\nconst max = values[count - 1];\nconst median = count % 2 === 0 \n  ? (values[count/2 - 1] + values[count/2]) / 2\n  : values[Math.floor(count/2)];\n\nreturn [{\n  json: {\n    count: count,\n    sum: sum,\n    average: average,\n    min: min,\n    max: max,\n    median: median\n  }\n}];"
+        }
+      }
+    },
+    "stringManipulation": {
+      "displayName": "Manipulation de Chaînes",
+      "snippets": {
+        "cleanText": {
+          "name": "Nettoyer du texte",
+          "description": "Nettoie et normalise du texte",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Clean and normalize text\nconst items = $input.all();\n\nconst processed = items.map(item => ({\n  json: {\n    ...item.json,\n    cleanedText: item.json.text\n      .trim()                        // Remove whitespace\n      .toLowerCase()                 // Convert to lowercase\n      .replace(/\\s+/g, ' ')          // Remove extra spaces\n      .replace(/[^a-z0-9\\s-]/g, '')  // Remove special chars\n  }\n}));\n\nreturn processed;"
+        },
+        "generateSlug": {
+          "name": "Générer un slug URL",
+          "description": "Crée un slug URL-friendly à partir d'un texte",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Generate URL-friendly slug from text\nconst items = $input.all();\n\nconst processed = items.map(item => ({\n  json: {\n    ...item.json,\n    slug: item.json.title\n      .toLowerCase()\n      .trim()\n      .replace(/[^a-z0-9\\s-]/g, '')  // Remove special chars\n      .replace(/\\s+/g, '-')          // Replace spaces with dashes\n      .replace(/-+/g, '-')           // Remove consecutive dashes\n      .replace(/^-|-$/g, '')         // Remove leading/trailing dashes\n  }\n}));\n\nreturn processed;"
+        },
+        "extractEmails": {
+          "name": "Extraire des emails",
+          "description": "Extrait toutes les adresses email d'un texte",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Extract email addresses from text\nconst items = $input.all();\n\nconst emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;\n\nconst processed = items.map(item => {\n  const emails = item.json.text.match(emailRegex) || [];\n  return {\n    json: {\n      ...item.json,\n      extractedEmails: emails,\n      emailCount: emails.length\n    }\n  };\n});\n\nreturn processed;"
+        }
+      }
+    },
+    "apiProcessing": {
+      "displayName": "Traitement d'API",
+      "snippets": {
+        "paginationHandler": {
+          "name": "Gérer la pagination",
+          "description": "Accumule les résultats paginés d'une API",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Handle paginated API responses\nconst items = $input.all();\nconst allData = [];\n\nitems.forEach(item => {\n  if (item.json.data && Array.isArray(item.json.data)) {\n    allData.push(...item.json.data);\n  }\n});\n\nreturn [{\n  json: {\n    items: allData,\n    totalCount: allData.length,\n    pagesProcessed: items.length\n  }\n}];"
+        },
+        "errorResponseHandler": {
+          "name": "Gérer les erreurs d'API",
+          "description": "Traite et structure les erreurs d'API",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Handle API error responses\nconst items = $input.all();\n\nconst processed = items.map(item => {\n  const isError = item.json.error || item.json.statusCode >= 400;\n  \n  return {\n    json: {\n      success: !isError,\n      data: isError ? null : item.json.data,\n      error: isError ? {\n        message: item.json.error?.message || item.json.message || 'Unknown error',\n        code: item.json.statusCode || 500,\n        details: item.json.error?.details || null\n      } : null,\n      timestamp: new Date().toISOString()\n    }\n  };\n});\n\nreturn processed;"
+        },
+        "rateLimitBackoff": {
+          "name": "Calculer le délai de retry",
+          "description": "Calcule le délai d'attente avec backoff exponentiel",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Calculate retry delay with exponential backoff\nconst items = $input.all();\n\nconst processed = items.map(item => {\n  const retryCount = item.json.retryCount || 0;\n  const baseDelay = 1000; // 1 second\n  const maxDelay = 60000; // 60 seconds\n  \n  // Exponential backoff: delay = baseDelay * 2^retryCount\n  const delay = Math.min(\n    baseDelay * Math.pow(2, retryCount),\n    maxDelay\n  );\n  \n  return {\n    json: {\n      ...item.json,\n      retryAfter: delay,\n      retryAt: new Date(Date.now() + delay).toISOString(),\n      nextRetryCount: retryCount + 1\n    }\n  };\n});\n\nreturn processed;"
+        }
+      }
+    },
+    "validation": {
+      "displayName": "Validation",
+      "snippets": {
+        "validateEmail": {
+          "name": "Valider des emails",
+          "description": "Valide le format des adresses email",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Validate email addresses\nconst items = $input.all();\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n\nconst processed = items.map(item => ({\n  json: {\n    ...item.json,\n    emailValid: emailRegex.test(item.json.email),\n    validationErrors: []\n  }\n}));\n\n// Add validation errors\nprocessed.forEach(item => {\n  if (!item.json.emailValid) {\n    item.json.validationErrors.push('Invalid email format');\n  }\n});\n\nreturn processed;"
+        },
+        "validateRequired": {
+          "name": "Valider champs requis",
+          "description": "Vérifie la présence de champs obligatoires",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Validate required fields\nconst items = $input.all();\nconst requiredFields = ['name', 'email', 'phone'];\n\nconst processed = items.map(item => {\n  const errors = [];\n  const missing = [];\n  \n  requiredFields.forEach(field => {\n    if (!item.json[field] || item.json[field] === '') {\n      missing.push(field);\n      errors.push(`Missing required field: ${field}`);\n    }\n  });\n  \n  return {\n    json: {\n      ...item.json,\n      isValid: errors.length === 0,\n      missingFields: missing,\n      validationErrors: errors\n    }\n  };\n});\n\nreturn processed;"
+        },
+        "validateDataTypes": {
+          "name": "Valider les types de données",
+          "description": "Vérifie que les champs ont les bons types",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Validate data types\nconst items = $input.all();\n\nconst schema = {\n  id: 'number',\n  name: 'string',\n  email: 'string',\n  active: 'boolean',\n  tags: 'array'\n};\n\nconst processed = items.map(item => {\n  const errors = [];\n  \n  Object.entries(schema).forEach(([field, expectedType]) => {\n    const value = item.json[field];\n    let actualType = typeof value;\n    \n    if (expectedType === 'array' && Array.isArray(value)) {\n      actualType = 'array';\n    }\n    \n    if (value !== null && value !== undefined && actualType !== expectedType) {\n      errors.push(`Field '${field}' should be ${expectedType}, got ${actualType}`);\n    }\n  });\n  \n  return {\n    json: {\n      ...item.json,\n      typeValid: errors.length === 0,\n      typeErrors: errors\n    }\n  };\n});\n\nreturn processed;"
+        }
+      }
+    },
+    "dateTime": {
+      "displayName": "Date et Heure",
+      "snippets": {
+        "formatDates": {
+          "name": "Formater des dates",
+          "description": "Convertit et formate des dates",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Format dates\nconst items = $input.all();\n\nconst processed = items.map(item => {\n  const date = new Date(item.json.timestamp);\n  \n  return {\n    json: {\n      ...item.json,\n      isoDate: date.toISOString(),\n      unixTimestamp: Math.floor(date.getTime() / 1000),\n      formatted: date.toLocaleDateString('fr-FR'),\n      year: date.getFullYear(),\n      month: date.getMonth() + 1,\n      day: date.getDate()\n    }\n  };\n});\n\nreturn processed;"
+        },
+        "calculateDuration": {
+          "name": "Calculer une durée",
+          "description": "Calcule la durée entre deux dates",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Calculate duration between dates\nconst items = $input.all();\n\nconst processed = items.map(item => {\n  const start = new Date(item.json.startDate);\n  const end = new Date(item.json.endDate);\n  const diffMs = end - start;\n  \n  return {\n    json: {\n      ...item.json,\n      durationMs: diffMs,\n      durationSeconds: Math.floor(diffMs / 1000),\n      durationMinutes: Math.floor(diffMs / 1000 / 60),\n      durationHours: Math.floor(diffMs / 1000 / 60 / 60),\n      durationDays: Math.floor(diffMs / 1000 / 60 / 60 / 24)\n    }\n  };\n});\n\nreturn processed;"
+        },
+        "addTimeToDate": {
+          "name": "Ajouter du temps à une date",
+          "description": "Ajoute ou soustrait du temps d'une date",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Add time to a date\nconst items = $input.all();\n\nconst processed = items.map(item => {\n  const date = new Date(item.json.date);\n  \n  // Add 7 days\n  const futureDate = new Date(date);\n  futureDate.setDate(date.getDate() + 7);\n  \n  // Subtract 1 month\n  const pastDate = new Date(date);\n  pastDate.setMonth(date.getMonth() - 1);\n  \n  return {\n    json: {\n      ...item.json,\n      originalDate: date.toISOString(),\n      in7Days: futureDate.toISOString(),\n      oneMonthAgo: pastDate.toISOString()\n    }\n  };\n});\n\nreturn processed;"
+        }
+      }
+    },
+    "errorHandling": {
+      "displayName": "Gestion d'Erreurs",
+      "snippets": {
+        "tryCatchWrapper": {
+          "name": "Wrapper try-catch",
+          "description": "Entoure du code avec gestion d'erreur",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Wrap processing with error handling\nconst items = $input.all();\nconst results = [];\nconst errors = [];\n\nitems.forEach(item => {\n  try {\n    // Your processing logic here\n    const processed = {\n      json: {\n        ...item.json,\n        processed: true,\n        // Add your transformations\n      }\n    };\n    results.push(processed);\n  } catch (error) {\n    errors.push({\n      json: {\n        originalData: item.json,\n        error: error.message,\n        errorStack: error.stack,\n        timestamp: new Date().toISOString()\n      }\n    });\n  }\n});\n\n// Return successful results (errors logged separately)\nreturn results.length > 0 ? results : [{\n  json: {\n    message: 'All items failed processing',\n    errorCount: errors.length,\n    errors: errors.map(e => e.json)\n  }\n}];"
+        },
+        "validateAndContinue": {
+          "name": "Valider et continuer",
+          "description": "Valide les données et continue avec les valides",
+          "nodeType": "n8n-nodes-base.code",
+          "mode": "runOnceForAllItems",
+          "code": "// Validate items and continue with valid ones\nconst items = $input.all();\nconst valid = [];\nconst invalid = [];\n\nitems.forEach(item => {\n  // Validation logic\n  const isValid = \n    item.json.email &&\n    item.json.name &&\n    item.json.email.includes('@');\n  \n  if (isValid) {\n    valid.push(item);\n  } else {\n    invalid.push({\n      json: {\n        ...item.json,\n        invalidReason: 'Missing or invalid required fields'\n      }\n    });\n  }\n});\n\n// Log invalid items to context (if needed)\nif (invalid.length > 0) {\n  console.log(`${invalid.length} invalid items skipped`);\n}\n\nreturn valid;"
+        }
+      }
+    }
+  },
+  "functionNodeHelpers": {
+    "title": "Helpers pour Function Node (ancien format)",
+    "availableVariables": {
+      "$input": "Helper pour accéder aux items d'entrée",
+      "item": "L'item courant en cours de traitement",
+      "items": "Tableau de tous les items",
+      "$item": "Helper pour l'item courant",
+      "$node": "Informations sur le nœud",
+      "$workflow": "Informations sur le workflow",
+      "$execution": "Informations sur l'exécution"
+    },
+    "basicTemplate": "// Function node basic template\nconst items = $input.all();\n\n// Process items\nconst processed = items.map(item => ({\n  json: {\n    // Your transformation here\n    ...item.json\n  }\n}));\n\nreturn processed;"
+  },
+  "codeNodeHelpers": {
+    "title": "Helpers pour Code Node (format moderne)",
+    "modes": {
+      "runOnceForAllItems": "Exécute une fois pour tous les items (recommandé pour performance)",
+      "runOnceForEachItem": "Exécute une fois par item (utile pour opérations item par item)"
+    },
+    "basicTemplateAllItems": "// Code node - Run once for all items\nconst items = $input.all();\n\n// Process all items at once\nconst processed = items.map(item => ({\n  json: {\n    ...item.json,\n    // Add your transformations\n  }\n}));\n\nreturn processed;",
+    "basicTemplateEachItem": "// Code node - Run once for each item\nconst item = $input.item;\n\n// Process single item\nconst result = {\n  json: {\n    ...item.json,\n    // Add your transformations\n  }\n};\n\nreturn result;"
+  }
+}

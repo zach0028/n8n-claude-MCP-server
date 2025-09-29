@@ -1,17 +1,56 @@
-# n8n Claude MCP Server
+# n8n Claude MCP Server 🚀
 
-**Professional Model Context Protocol (MCP) server for comprehensive n8n integration with Claude Desktop**
+**Serveur MCP Professionnel pour l'Intégration Complète n8n avec Claude Desktop**
 
-> Complete workflow automation solution - Create, analyze, modify, and manage n8n workflows with enterprise-grade tools and intelligent automation.
+> ✨ **VERSION 2.0 - MANIPULATION ULTRA FINE DES NŒUDS** ✨
+> 
+> Solution complète d'automatisation de workflows - Créez, analysez, modifiez et gérez des workflows n8n avec des outils de niveau entreprise et une manipulation granulaire de chaque nœud.
 
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![n8n](https://img.shields.io/badge/n8n-1.0+-blue.svg)](https://n8n.io/)
 [![MCP](https://img.shields.io/badge/MCP-1.18+-purple.svg)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Overview
+## 🎯 Vue d'Ensemble
 
-This MCP server provides Claude Desktop with comprehensive n8n workflow management capabilities, including granular modification tools, advanced analysis features, templating systems, and intelligent automation based on official n8n documentation and industry best practices.
+Ce serveur MCP offre à Claude Desktop des capacités **ultra-avancées** de gestion de workflows n8n, incluant :
+- 📚 **Documentation complète de 30+ nœuds** avec tous les paramètres
+- 🔧 **Manipulation granulaire** au niveau de chaque paramètre
+- 💡 **100+ exemples d'expressions n8n**
+- 📝 **30+ snippets de code** réutilisables
+- ✅ **Validation complète** à chaque étape
+- 🎨 **Aide contextuelle** automatique
+
+**🎉 NOUVEAU (v2.0)** : Claude peut maintenant modifier **individuellement** n'importe quel paramètre de n'importe quel nœud, configurer des expressions complexes, écrire du code JavaScript, et gérer les credentials - exactement comme un humain !
+
+---
+
+## ⚡ Nouveautés Version 2.0
+
+### 🎯 Manipulation Fine des Nœuds
+- ✅ **20+ nouveaux outils MCP** pour manipulation granulaire
+- ✅ **Documentation exhaustive** de tous les nœuds n8n
+- ✅ **Guide complet des expressions** avec 100+ exemples
+- ✅ **Bibliothèque de snippets** de code réutilisables
+- ✅ **Validation automatique** des configurations
+- ✅ **Aide contextuelle** intelligente
+
+### 📚 Documentation Intégrée
+- **`node-parameters-database.json`** - Base de données de 30+ nœuds
+- **`N8N_EXPRESSIONS_GUIDE.md`** - Guide complet des expressions
+- **`node-code-snippets.json`** - 30+ templates de code
+- **`advanced-node-manipulation-tools.js`** - 7 fonctions avancées
+
+### 🔥 Capacités Claude
+Claude peut maintenant :
+- 🔍 Consulter **tous les paramètres** d'un type de nœud
+- 🎯 Modifier **un seul paramètre** sans recréer le workflow
+- ✨ Utiliser **toutes les expressions n8n** (`$json`, `$node`, `$now`, etc.)
+- 💻 Écrire du **code JavaScript** pour Function/Code nodes
+- 🔐 Configurer les **credentials** et l'authentification
+- 📖 Accéder à des **snippets pré-faits** pour cas courants
+
+---
 
 ## Features
 

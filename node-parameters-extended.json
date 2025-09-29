@@ -1,0 +1,596 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Extension de la Base de Données des Nœuds n8n",
+  "description": "Nœuds additionnels avec tous leurs paramètres",
+  "version": "1.0.0",
+  "lastUpdated": "2025-01-29",
+  "nodes": {
+    "n8n-nodes-base.if": {
+      "displayName": "IF",
+      "description": "Divise les données en fonction de conditions (logique conditionnelle)",
+      "category": "Core",
+      "version": 2.0,
+      "credentials": [],
+      "parameters": {
+        "conditions": {
+          "displayName": "Conditions",
+          "type": "filter",
+          "required": true,
+          "default": {},
+          "typeOptions": {
+            "filter": {
+              "caseSensitive": true,
+              "typeValidation": "strict"
+            }
+          },
+          "description": "Conditions à évaluer",
+          "structure": {
+            "conditions": [
+              {
+                "leftValue": "={{$json.fieldName}}",
+                "operator": {
+                  "type": "string|number|boolean|dateTime|array|object",
+                  "operation": "equals|notEquals|contains|notContains|startsWith|endsWith|regex|gt|gte|lt|lte|isEmpty|isNotEmpty|isTrue|isFalse"
+                },
+                "rightValue": "value"
+              }
+            ],
+            "combinator": "and|or"
+          }
+        },
+        "combineOperation": {
+          "displayName": "Combine",
+          "type": "options",
+          "default": "all",
+          "options": [
+            {"name": "ALL conditions must be true (AND)", "value": "all"},
+            {"name": "ANY condition must be true (OR)", "value": "any"}
+          ],
+          "description": "Comment combiner les conditions multiples"
+        }
+      },
+      "outputConnections": {
+        "true": {"description": "Items qui correspondent aux conditions", "index": 0},
+        "false": {"description": "Items qui ne correspondent pas", "index": 1}
+      },
+      "examples": [
+        {
+          "name": "Simple string comparison",
+          "parameters": {
+            "conditions": {
+              "conditions": [
+                {
+                  "leftValue": "={{$json.status}}",
+                  "operator": {"type": "string", "operation": "equals"},
+                  "rightValue": "active"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "n8n-nodes-base.switch": {
+      "displayName": "Switch",
+      "description": "Route les données vers différentes branches",
+      "category": "Core",
+      "version": 3.0,
+      "parameters": {
+        "mode": {
+          "type": "options",
+          "default": "rules",
+          "options": [
+            {"name": "Rules", "value": "rules"},
+            {"name": "Expression", "value": "expression"}
+          ]
+        },
+        "rules": {
+          "type": "fixedCollection",
+          "structure": {
+            "rules": [
+              {
+                "output": 0,
+                "conditions": {"conditions": []}
+              }
+            ]
+          }
+        },
+        "fallbackOutput": {"type": "number", "default": -1}
+      }
+    },
+    "n8n-nodes-base.merge": {
+      "displayName": "Merge",
+      "description": "Fusionne les données de plusieurs branches",
+      "category": "Core",
+      "version": 3.0,
+      "parameters": {
+        "mode": {
+          "type": "options",
+          "options": ["append", "mergeByFields", "mergeByPosition", "multiplex", "chooseBranch"]
+        },
+        "mergeByFields": {
+          "type": "fixedCollection",
+          "structure": {
+            "values": [
+              {"field1": "fieldInInput1", "field2": "fieldInInput2"}
+            ]
+          }
+        },
+        "joinMode": {
+          "type": "options",
+          "options": ["enrichInput1", "enrichInput2", "keepMatches", "keepNonMatches", "keepEverything"]
+        }
+      }
+    },
+    "n8n-nodes-base.emailSend": {
+      "displayName": "Send Email",
+      "description": "Envoie des emails via SMTP",
+      "category": "Communication",
+      "version": 2.1,
+      "credentials": [{"name": "smtp", "required": true}],
+      "parameters": {
+        "fromEmail": {"type": "string", "required": true, "expressionSupport": true},
+        "toEmail": {"type": "string", "required": true, "expressionSupport": true},
+        "subject": {"type": "string", "required": true, "expressionSupport": true},
+        "message": {"type": "string", "required": true, "expressionSupport": true},
+        "options": {
+          "type": "collection",
+          "options": ["ccEmail", "bccEmail", "replyTo", "attachments", "allowUnauthorizedCerts"]
+        }
+      }
+    },
+    "n8n-nodes-base.cron": {
+      "displayName": "Cron",
+      "description": "Déclenche le workflow à des intervalles réguliers",
+      "category": "Core",
+      "version": 1.0,
+      "isTrigger": true,
+      "parameters": {
+        "triggerTimes": {
+          "type": "fixedCollection",
+          "structure": {
+            "item": [
+              {
+                "mode": "everyMinute|everyHour|everyDay|everyWeek|everyMonth|custom",
+                "hour": 0,
+                "minute": 0,
+                "dayOfWeek": 0,
+                "dayOfMonth": 1,
+                "cronExpression": "0 0 * * *"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "n8n-nodes-base.respondToWebhook": {
+      "displayName": "Respond to Webhook",
+      "description": "Retourne une réponse personnalisée au webhook",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "respondWith": {
+          "type": "options",
+          "options": ["json", "text", "binary", "noData", "redirect"]
+        },
+        "responseBody": {"type": "string", "expressionSupport": true},
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {"entries": [{"name": "", "value": ""}]}
+        }
+      }
+    },
+    "n8n-nodes-base.splitInBatches": {
+      "displayName": "Split In Batches",
+      "description": "Divise les données en lots pour traitement itératif",
+      "category": "Core",
+      "version": 3.0,
+      "parameters": {
+        "batchSize": {
+          "type": "number",
+          "default": 10,
+          "description": "Nombre d'items par lot"
+        },
+        "options": {
+          "type": "collection",
+          "options": [
+            {
+              "name": "reset",
+              "type": "boolean",
+              "default": false,
+              "description": "Réinitialiser entre les exécutions"
+            }
+          ]
+        }
+      },
+      "outputConnections": {
+        "loop": {"description": "Sortie de boucle", "index": 0},
+        "done": {"description": "Exécution terminée", "index": 1}
+      }
+    },
+    "n8n-nodes-base.itemLists": {
+      "displayName": "Item Lists",
+      "description": "Manipule des listes d'items (sort, filter, limit, etc.)",
+      "category": "Core",
+      "version": 3.0,
+      "parameters": {
+        "operation": {
+          "type": "options",
+          "options": [
+            {"name": "Aggregate Items", "value": "aggregateItems"},
+            {"name": "Limit", "value": "limit"},
+            {"name": "Remove Duplicates", "value": "removeDuplicates"},
+            {"name": "Sort", "value": "sort"},
+            {"name": "Split Out Items", "value": "splitOutItems"},
+            {"name": "Summarize", "value": "summarize"}
+          ]
+        },
+        "limit": {
+          "type": "number",
+          "default": 1,
+          "description": "Nombre maximum d'items à garder"
+        },
+        "fieldToSortBy": {
+          "type": "string",
+          "description": "Nom du champ pour le tri"
+        },
+        "sortOrder": {
+          "type": "options",
+          "options": [
+            {"name": "Ascending", "value": "ascending"},
+            {"name": "Descending", "value": "descending"}
+          ]
+        }
+      }
+    },
+    "n8n-nodes-base.wait": {
+      "displayName": "Wait",
+      "description": "Met en pause le workflow pendant un certain temps ou jusqu'à un événement",
+      "category": "Core",
+      "version": 1.1,
+      "parameters": {
+        "resume": {
+          "type": "options",
+          "required": true,
+          "default": "webhook",
+          "options": [
+            {"name": "After Time Interval", "value": "timeInterval"},
+            {"name": "At Specified Time", "value": "specificTime"},
+            {"name": "On Webhook Call", "value": "webhook"},
+            {"name": "On Form Submission", "value": "form"}
+          ]
+        },
+        "amount": {
+          "type": "number",
+          "displayOptions": {"show": {"resume": ["timeInterval"]}},
+          "default": 1,
+          "description": "Durée d'attente"
+        },
+        "unit": {
+          "type": "options",
+          "displayOptions": {"show": {"resume": ["timeInterval"]}},
+          "default": "hours",
+          "options": [
+            {"name": "Seconds", "value": "seconds"},
+            {"name": "Minutes", "value": "minutes"},
+            {"name": "Hours", "value": "hours"},
+            {"name": "Days", "value": "days"}
+          ]
+        },
+        "dateTime": {
+          "type": "dateTime",
+          "displayOptions": {"show": {"resume": ["specificTime"]}},
+          "default": "",
+          "description": "Date et heure de reprise"
+        }
+      }
+    },
+    "n8n-nodes-base.executeWorkflow": {
+      "displayName": "Execute Workflow",
+      "description": "Exécute un autre workflow",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "workflowId": {
+          "type": "string",
+          "required": true,
+          "description": "ID du workflow à exécuter",
+          "expressionSupport": true
+        },
+        "mode": {
+          "type": "options",
+          "default": "raw",
+          "options": [
+            {"name": "Run in main workflow", "value": "integrated"},
+            {"name": "Run independently", "value": "raw"}
+          ]
+        },
+        "waitForCompletion": {
+          "type": "boolean",
+          "default": true,
+          "description": "Attendre la fin de l'exécution"
+        }
+      }
+    },
+    "n8n-nodes-base.stopAndError": {
+      "displayName": "Stop and Error",
+      "description": "Arrête l'exécution du workflow avec une erreur",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "message": {
+          "type": "string",
+          "required": false,
+          "default": "",
+          "description": "Message d'erreur",
+          "expressionSupport": true
+        }
+      }
+    },
+    "n8n-nodes-base.errorTrigger": {
+      "displayName": "Error Trigger",
+      "description": "Déclenche un workflow quand un autre workflow échoue",
+      "category": "Core",
+      "version": 1.0,
+      "isTrigger": true,
+      "parameters": {}
+    },
+    "n8n-nodes-base.spreadsheetFile": {
+      "displayName": "Spreadsheet File",
+      "description": "Lit et écrit des fichiers Excel et CSV",
+      "category": "Core",
+      "version": 2.0,
+      "parameters": {
+        "operation": {
+          "type": "options",
+          "options": [
+            {"name": "Read from File", "value": "read"},
+            {"name": "Write to File", "value": "write"}
+          ]
+        },
+        "binaryPropertyName": {
+          "type": "string",
+          "default": "data",
+          "description": "Nom de la propriété binaire"
+        },
+        "fileFormat": {
+          "type": "options",
+          "options": [
+            {"name": "Automatic", "value": "autodetect"},
+            {"name": "CSV", "value": "csv"},
+            {"name": "HTML", "value": "html"},
+            {"name": "ODS", "value": "ods"},
+            {"name": "RTF", "value": "rtf"},
+            {"name": "XLS", "value": "xls"},
+            {"name": "XLSX", "value": "xlsx"}
+          ]
+        },
+        "options": {
+          "type": "collection",
+          "options": [
+            {"name": "headerRow", "type": "boolean"},
+            {"name": "delimiter", "type": "string"},
+            {"name": "sheetName", "type": "string"}
+          ]
+        }
+      }
+    },
+    "n8n-nodes-base.readBinaryFile": {
+      "displayName": "Read Binary File",
+      "description": "Lit un fichier du disque",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "filePath": {
+          "type": "string",
+          "required": true,
+          "placeholder": "/path/to/file.pdf",
+          "description": "Chemin du fichier à lire",
+          "expressionSupport": true
+        },
+        "options": {
+          "type": "collection",
+          "options": [
+            {"name": "propertyName", "type": "string", "default": "data"}
+          ]
+        }
+      }
+    },
+    "n8n-nodes-base.writeBinaryFile": {
+      "displayName": "Write Binary File",
+      "description": "Écrit un fichier sur le disque",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "fileName": {
+          "type": "string",
+          "required": true,
+          "placeholder": "/path/to/output.pdf",
+          "description": "Chemin où écrire le fichier",
+          "expressionSupport": true
+        },
+        "dataPropertyName": {
+          "type": "string",
+          "required": true,
+          "default": "data",
+          "description": "Nom de la propriété binaire source"
+        },
+        "options": {
+          "type": "collection",
+          "options": [
+            {"name": "append", "type": "boolean", "default": false}
+          ]
+        }
+      }
+    },
+    "n8n-nodes-base.executeCommand": {
+      "displayName": "Execute Command",
+      "description": "Exécute une commande shell",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "command": {
+          "type": "string",
+          "required": true,
+          "typeOptions": {"rows": 5},
+          "description": "Commande à exécuter",
+          "expressionSupport": true
+        },
+        "cwd": {
+          "type": "string",
+          "default": "",
+          "placeholder": "/path/to/working/directory",
+          "description": "Répertoire de travail",
+          "expressionSupport": true
+        }
+      }
+    },
+    "n8n-nodes-base.moveBinaryData": {
+      "displayName": "Move Binary Data",
+      "description": "Déplace des données entre binaire et JSON",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "mode": {
+          "type": "options",
+          "options": [
+            {"name": "Binary to JSON", "value": "binaryToJson"},
+            {"name": "JSON to Binary", "value": "jsonToBinary"}
+          ]
+        },
+        "options": {
+          "type": "collection",
+          "options": [
+            {"name": "dataIsBase64", "type": "boolean"},
+            {"name": "encoding", "type": "string"},
+            {"name": "fileName", "type": "string"},
+            {"name": "mimeType", "type": "string"}
+          ]
+        }
+      }
+    },
+    "n8n-nodes-base.compression": {
+      "displayName": "Compression",
+      "description": "Compresse ou décompresse des fichiers",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "operation": {
+          "type": "options",
+          "options": [
+            {"name": "Compress", "value": "compress"},
+            {"name": "Decompress", "value": "decompress"}
+          ]
+        },
+        "binaryPropertyName": {
+          "type": "string",
+          "default": "data"
+        },
+        "outputFormat": {
+          "type": "options",
+          "options": [
+            {"name": "7z", "value": "7z"},
+            {"name": "tar", "value": "tar"},
+            {"name": "zip", "value": "zip"},
+            {"name": "gz", "value": "gz"}
+          ]
+        }
+      }
+    },
+    "n8n-nodes-base.crypto": {
+      "displayName": "Crypto",
+      "description": "Opérations cryptographiques (hash, HMAC, sign)",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "action": {
+          "type": "options",
+          "options": [
+            {"name": "Generate", "value": "generate"},
+            {"name": "Hash", "value": "hash"},
+            {"name": "HMAC", "value": "hmac"},
+            {"name": "Sign", "value": "sign"}
+          ]
+        },
+        "type": {
+          "type": "options",
+          "displayOptions": {"show": {"action": ["generate"]}},
+          "options": [
+            {"name": "MD5", "value": "MD5"},
+            {"name": "SHA256", "value": "SHA256"},
+            {"name": "SHA384", "value": "SHA384"},
+            {"name": "SHA512", "value": "SHA512"}
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Valeur à hasher",
+          "expressionSupport": true
+        }
+      }
+    },
+    "n8n-nodes-base.html": {
+      "displayName": "HTML",
+      "description": "Extrait des données de HTML (parsing, extraction)",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "operation": {
+          "type": "options",
+          "options": [
+            {"name": "Extract HTML Content", "value": "extractHtmlContent"},
+            {"name": "Generate HTML Template", "value": "generateHtmlTemplate"}
+          ]
+        },
+        "sourceData": {
+          "type": "options",
+          "options": [
+            {"name": "Binary", "value": "binary"},
+            {"name": "JSON", "value": "json"}
+          ]
+        },
+        "extractionValues": {
+          "type": "fixedCollection",
+          "typeOptions": {"multipleValues": true},
+          "structure": {
+            "values": [
+              {
+                "key": "propertyName",
+                "cssSelector": "div.class",
+                "returnValue": "html|text|attribute|value"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "n8n-nodes-base.xml": {
+      "displayName": "XML",
+      "description": "Convertit entre XML et JSON",
+      "category": "Core",
+      "version": 1.0,
+      "parameters": {
+        "mode": {
+          "type": "options",
+          "options": [
+            {"name": "JSON to XML", "value": "jsonToxml"},
+            {"name": "XML to JSON", "value": "xmlToJson"}
+          ]
+        },
+        "propertyName": {
+          "type": "string",
+          "default": "data",
+          "description": "Nom de la propriété contenant les données"
+        },
+        "options": {
+          "type": "collection",
+          "options": [
+            {"name": "ignoreAttributes", "type": "boolean"},
+            {"name": "rootName", "type": "string"},
+            {"name": "trim", "type": "boolean"}
+          ]
+        }
+      }
+    }
+  }
+}
